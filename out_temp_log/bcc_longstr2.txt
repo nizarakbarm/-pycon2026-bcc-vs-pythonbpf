@@ -1,0 +1,13 @@
+[TIMING] BPF init: 0.656s CPU
+Traceback (most recent call last):
+  File "/root/learn-BCC/syscall_trigger/without_map/print_long_str_timed_unlink.py", line 15, in <module>
+    bpf.trace_print()
+    ~~~~~~~~~~~~~~~^^
+  File "/usr/lib/python3.13/site-packages/bcc/__init__.py", line 1647, in trace_print
+    line = self.trace_readline(nonblocking=False)
+  File "/usr/lib/python3.13/site-packages/bcc/__init__.py", line 1623, in trace_readline
+    trace = self.trace_open(nonblocking)
+  File "/usr/lib/python3.13/site-packages/bcc/__init__.py", line 1574, in trace_open
+    self.tracefile = open("%s/trace_pipe" % TRACEFS, "rb")
+                     ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 16] Device or resource busy: '/sys/kernel/debug/tracing/trace_pipe'

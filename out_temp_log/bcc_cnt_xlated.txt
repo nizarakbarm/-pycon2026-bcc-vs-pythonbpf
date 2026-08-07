@@ -1,0 +1,66 @@
+int tracepoint__syscalls__sys_enter_unlink(struct tracepoint__syscalls__sys_enter_unlink * args):
+; TRACEPOINT_PROBE(syscalls, sys_enter_unlink) {
+   0: (bf) r6 = r1
+; u32 uid = bpf_get_current_uid_gid();
+   1: (85) call bpf_get_current_uid_gid#228144
+; u32 uid = bpf_get_current_uid_gid();
+   2: (63) *(u32 *)(r10 -4) = r0
+; u32 uid = bpf_get_current_uid_gid();
+   3: (67) r0 <<= 32
+   4: (77) r0 >>= 32
+; if (uid == 1002) {
+   5: (55) if r0 != 0x3ea goto pc+42
+   6: (b7) r7 = 0
+; struct data_t data = {};
+   7: (7b) *(u64 *)(r10 -16) = r7
+   8: (7b) *(u64 *)(r10 -24) = r7
+   9: (7b) *(u64 *)(r10 -32) = r7
+  10: (7b) *(u64 *)(r10 -40) = r7
+  11: (bf) r1 = r10
+  12: (07) r1 += -24
+; bpf_get_current_comm(&data.comm, sizeof(data.comm));
+  13: (b7) r2 = 16
+  14: (85) call bpf_get_current_comm#228256
+  15: (b7) r1 = 1002
+; data.uid = uid;
+  16: (63) *(u32 *)(r10 -40) = r1
+; u64 *count, zero = 0;
+  17: (7b) *(u64 *)(r10 -48) = r7
+; count = bpf_map_lookup_elem((void *)bpf_pseudo_fd(1, -1), &uid);
+  18: (18) r1 = map[id:4108]
+  20: (bf) r2 = r10
+  21: (07) r2 += -4
+; count = bpf_map_lookup_elem((void *)bpf_pseudo_fd(1, -1), &uid);
+  22: (85) call __htab_map_lookup_elem#270336
+  23: (15) if r0 == 0x0 goto pc+1
+  24: (07) r0 += 56
+; if (count) {
+  25: (15) if r0 == 0x0 goto pc+4
+; (*count)++;
+  26: (79) r7 = *(u64 *)(r0 +0)
+  27: (07) r7 += 1
+  28: (7b) *(u64 *)(r0 +0) = r7
+; } else {
+  29: (05) goto pc+8
+; bpf_map_update_elem((void *)bpf_pseudo_fd(1, -1), &uid, &zero, BPF_ANY);
+  30: (18) r1 = map[id:4108]
+  32: (bf) r2 = r10
+  33: (07) r2 += -4
+  34: (bf) r3 = r10
+  35: (07) r3 += -48
+; bpf_map_update_elem((void *)bpf_pseudo_fd(1, -1), &uid, &zero, BPF_ANY);
+  36: (b7) r4 = 0
+  37: (85) call htab_map_update_elem#283360
+  38: (7b) *(u64 *)(r10 -32) = r7
+; bpf_perf_event_output(args, (void *)bpf_pseudo_fd(1, -2), CUR_CPU_IDENTIFIER, &data, sizeof(data));
+  39: (18) r2 = map[id:4107]
+  41: (bf) r4 = r10
+  42: (07) r4 += -40
+; bpf_perf_event_output(args, (void *)bpf_pseudo_fd(1, -2), CUR_CPU_IDENTIFIER, &data, sizeof(data));
+  43: (bf) r1 = r6
+  44: (18) r3 = 0xffffffff
+  46: (b7) r5 = 32
+  47: (85) call bpf_perf_event_output_tp#-91328
+; return 0;
+  48: (b7) r0 = 0
+  49: (95) exit

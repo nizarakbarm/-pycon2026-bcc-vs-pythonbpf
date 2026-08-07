@@ -1,0 +1,89 @@
+import threading, time, signal
+from pythonbpf import BPF, section, bpf, map, bpfglobal, struct
+from pythonbpf.maps import HashMap, PerfEventArray
+from pythonbpf.helper import uid, comm
+from ctypes import c_void_p, c_uint32, c_uint64, c_int64
+
+interrupted = False
+def handler(signum, frame):
+    global interrupted
+    interrupted = True
+signal.signal(signal.SIGINT, handler)
+
+@bpf
+@struct
+class data_t:
+    last_comm: str(16)
+
+@bpf
+@map
+def Count() -> HashMap:
+    return HashMap(key=c_uint32, value=c_uint64, max_entries=1024)
+
+@bpf
+@map
+def events() -> PerfEventArray:
+    return PerfEventArray(key_size=c_int64, value_size=c_int64)
+
+@bpf
+@bpfglobal
+def LICENSE() -> str:
+    return "GPL"
+
+@bpf
+@section("tracepoint/syscalls/sys_enter_unlink")
+def trace_unlink(ctx: c_void_p) -> c_int64:
+    u_id = uid()
+    if u_id == 1002:
+        data = data_t()
+        comm(data.last_comm)
+        events.output(data)
+        count = Count.lookup(u_id)
+        if count:
+            Count.update(u_id, count + 1)
+        else:
+            Count.update(u_id, 0)
+    return 0
+
+main_ident = threading.get_ident()
+main_native = threading.get_native_id()
+
+t0_cpu = time.process_time()
+t0_wall = time.perf_counter()
+b = BPF()
+b.load()
+b.attach_all()
+t1_cpu = time.process_time()
+t1_wall = time.perf_counter()
+
+call_count = 0
+def printdata(cpu, event):
+    global call_count
+    call_count += 1
+    if call_count % 100 == 0:
+        count_map = b["Count"]
+        count = next((v for v in count_map.values()), 0)
+        uid_val = next((k for k in count_map.keys()), 0)
+        print(f"CPU [{cpu}] UID {uid_val} comm: {event.last_comm.decode()}, count: {count}", flush=True)
+
+perf = b["events"].open_perf_buffer(callback=printdata, struct_name="data_t")
+t2_cpu = time.process_time()
+t2_wall = time.perf_counter()
+
+print(f"[THREAD] Main poll: ident={main_ident} native={main_native}", flush=True)
+print(f"[TIMING] BPF init CPU: {t1_cpu-t0_cpu:.3f}s  wall: {t1_wall-t0_wall:.3f}s", flush=True)
+print(f"[TIMING] Setup CPU: {t2_cpu-t1_cpu:.3f}s  wall: {t2_wall-t1_wall:.3f}s", flush=True)
+print("Starting to poll... (Ctrl+C to stop)", flush=True)
+
+try:
+   while not interrupted:
+     perf.poll(10)
+except KeyboardInterrupt:
+     pass
+t3_cpu = time.process_time()
+t3_wall = time.perf_counter()
+
+print(f"[TIMING] Poll loop CPU: {t3_cpu-t2_cpu:.3f}s  wall: {t3_wall-t2_wall:.3f}s", flush=True)
+print(f"[TIMING] Total CPU: {t3_cpu-t0_cpu:.3f}s  wall: {t3_wall-t0_wall:.3f}s", flush=True)
+print(f"[SUMMARY] Events in map: {sum(v for v in b['Count'].values())}", flush=True)
+print(f"[SUMMARY] Callback invocations: {call_count}", flush=True)

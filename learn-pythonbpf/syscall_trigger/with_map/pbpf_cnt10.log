@@ -1,0 +1,17 @@
+[THREAD] Main poll: ident=140604114474432 native=1414795
+[TIMING] BPF init CPU: 0.025s  wall: 0.053s
+[TIMING] Setup CPU: 0.000s  wall: 0.000s
+Starting to poll... (Ctrl+C to stop)
+CPU [0] UID 1002, comm: gen_fast, count: 0
+CPU [0] UID 1002, comm: gen_fast, count: 1
+CPU [0] UID 1002, comm: gen_fast, count: 2
+CPU [0] UID 1002, comm: gen_fast, count: 3
+CPU [0] UID 1002, comm: gen_fast, count: 4
+CPU [0] UID 1002, comm: gen_fast, count: 5
+CPU [0] UID 1002, comm: gen_fast, count: 6
+CPU [0] UID 1002, comm: gen_fast, count: 7
+CPU [0] UID 1002, comm: gen_fast, count: 8
+CPU [0] UID 1002, comm: gen_fast, count: 9
+[TIMING] Poll loop CPU: 0.078s  wall: 2.847s
+[TIMING] Total CPU: 0.104s  wall: 2.900s
+[SUMMARY] Events in map: 10

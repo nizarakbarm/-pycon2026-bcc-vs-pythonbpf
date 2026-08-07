@@ -1,0 +1,71 @@
+import threading, time, signal
+from bcc import BPF
+
+main_ident = threading.get_ident()
+main_native = threading.get_native_id()
+
+interrupted = False
+def handler(signum, frame):
+    global interrupted
+    interrupted = True
+signal.signal(signal.SIGINT, handler)
+
+program="""
+BPF_HASH(count_hash,u32,u64);
+
+struct data_t {
+	char comm[16];
+};
+
+BPF_PERF_OUTPUT(events);
+
+TRACEPOINT_PROBE(syscalls, sys_enter_unlink) {
+	u32 uid = bpf_get_current_uid_gid();
+	if (uid == 1002) {
+        struct data_t data = {};
+		bpf_get_current_comm(&data.comm, sizeof(data.comm));
+		u64 *count, zero = 0;
+		count = count_hash.lookup(&uid);
+		if (count) {
+			(*count)++;
+		} else {
+			count_hash.update(&uid, &zero);
+			count = count_hash.lookup(&uid);
+			if (count) (*count)++;
+		}
+		events.perf_submit(args, &data, sizeof(data));
+	}
+	return 0;
+}
+"""
+
+t0_cpu = time.process_time()
+t0_wall = time.perf_counter()
+b = BPF(text=program)
+t1_cpu = time.process_time()
+t1_wall = time.perf_counter()
+
+# EMPTY callback - no hash iteration, no print
+def print_event(cpu, data, size):
+    pass
+
+b["events"].open_perf_buffer(print_event)
+t2_cpu = time.process_time()
+t2_wall = time.perf_counter()
+
+print(f"[THREAD] Main poll: ident={main_ident} native={main_native}", flush=True)
+print(f"[TIMING] BPF init CPU: {t1_cpu-t0_cpu:.3f}s  wall: {t1_wall-t0_wall:.3f}s", flush=True)
+print(f"[TIMING] Setup CPU: {t2_cpu-t1_cpu:.3f}s  wall: {t2_wall-t1_wall:.3f}s", flush=True)
+print("Starting to poll... (Ctrl+C to stop)", flush=True)
+
+try:
+   while not interrupted:
+     b.perf_buffer_poll(10)
+except KeyboardInterrupt:
+     pass
+t3_cpu = time.process_time()
+t3_wall = time.perf_counter()
+
+print(f"[TIMING] Poll loop CPU: {t3_cpu-t2_cpu:.3f}s  wall: {t3_wall-t2_wall:.3f}s", flush=True)
+print(f"[TIMING] Total CPU: {t3_cpu-t0_cpu:.3f}s  wall: {t3_wall-t0_wall:.3f}s", flush=True)
+print(f"[SUMMARY] Events in map: {sum(v.value for v in b['count_hash'].values())}", flush=True)

@@ -1,0 +1,57 @@
+[THREAD] Main poll: ident=140040815637952 native=1299917
+[TIMING] BPF init CPU: 0.021s  wall: 0.044s
+[TIMING] Setup CPU: 0.000s  wall: 0.000s
+Starting to poll... (Ctrl+C to stop)
+CPU [0] UID 1002 comm: gen_fast, count: 0
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+CPU [0] UID 1002 comm: gen_fast, count: 49
+[TIMING] Poll loop CPU: 0.012s  wall: 1.371s
+[TIMING] Total CPU: 0.033s  wall: 1.416s
+[SUMMARY] Events in map: 49

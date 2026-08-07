@@ -1,0 +1,83 @@
+int tracepoint__syscalls__sys_enter_unlink(struct tracepoint__syscalls__sys_enter_unlink * args):
+bpf_prog_17b2653ec143600b_tracepoint__syscalls__sys_enter_unlink:
+; TRACEPOINT_PROBE(syscalls, sys_enter_unlink) {
+   0:	endbr64
+   4:	nopl   0x0(%rax,%rax,1)
+   9:	nopl   (%rax)
+   c:	push   %rbp
+   d:	mov    %rsp,%rbp
+  10:	endbr64
+  14:	sub    $0x30,%rsp
+  1b:	push   %rbx
+  1c:	push   %r13
+  1e:	mov    %rdi,%rbx
+; u32 uid = bpf_get_current_uid_gid();
+  21:	call   0xffffffffd8567838
+; u32 uid = bpf_get_current_uid_gid();
+  26:	mov    %eax,-0x4(%rbp)
+; u32 uid = bpf_get_current_uid_gid();
+  29:	shl    $0x20,%rax
+  2d:	shr    $0x20,%rax
+; if (uid == 1002) {
+  31:	cmp    $0x3ea,%rax
+  38:	jne    0x000000e7
+  3e:	xor    %r13d,%r13d
+; struct data_t data = {};
+  41:	mov    %r13,-0x10(%rbp)
+  45:	mov    %r13,-0x18(%rbp)
+  49:	mov    %r13,-0x20(%rbp)
+  4d:	mov    %r13,-0x28(%rbp)
+  51:	mov    %rbp,%rdi
+  54:	add    $0xffffffffffffffe8,%rdi
+; bpf_get_current_comm(&data.comm, sizeof(data.comm));
+  58:	mov    $0x10,%esi
+  5d:	call   0xffffffffd85678a8
+  62:	mov    $0x3ea,%edi
+; data.uid = uid;
+  67:	mov    %edi,-0x28(%rbp)
+; u64 *count, zero = 0;
+  6a:	mov    %r13,-0x30(%rbp)
+; count = bpf_map_lookup_elem((void *)bpf_pseudo_fd(1, -1), &uid);
+  6e:	movabs $0xffff8f2d48619000,%rdi
+  78:	mov    %rbp,%rsi
+  7b:	add    $0xfffffffffffffffc,%rsi
+; count = bpf_map_lookup_elem((void *)bpf_pseudo_fd(1, -1), &uid);
+  7f:	call   0xffffffffd8571d08
+  84:	test   %rax,%rax
+  87:	je     0x0000008d
+  89:	add    $0x38,%rax
+; if (count) {
+  8d:	test   %rax,%rax
+  90:	je     0x000000a0
+; (*count)++;
+  92:	mov    0x0(%rax),%r13
+  96:	add    $0x1,%r13
+  9a:	mov    %r13,0x0(%rax)
+; } else {
+  9e:	jmp    0x000000bf
+; bpf_map_update_elem((void *)bpf_pseudo_fd(1, -1), &uid, &zero, BPF_ANY);
+  a0:	movabs $0xffff8f2d48619000,%rdi
+  aa:	mov    %rbp,%rsi
+  ad:	add    $0xfffffffffffffffc,%rsi
+  b1:	mov    %rbp,%rdx
+  b4:	add    $0xffffffffffffffd0,%rdx
+; bpf_map_update_elem((void *)bpf_pseudo_fd(1, -1), &uid, &zero, BPF_ANY);
+  b8:	xor    %ecx,%ecx
+  ba:	call   0xffffffffd8574fe8
+  bf:	mov    %r13,-0x20(%rbp)
+; bpf_perf_event_output(args, (void *)bpf_pseudo_fd(1, -2), CUR_CPU_IDENTIFIER, &data, sizeof(data));
+  c3:	movabs $0xffff8f2d4b3daa00,%rsi
+  cd:	mov    %rbp,%rcx
+  d0:	add    $0xffffffffffffffd8,%rcx
+; bpf_perf_event_output(args, (void *)bpf_pseudo_fd(1, -2), CUR_CPU_IDENTIFIER, &data, sizeof(data));
+  d4:	mov    %rbx,%rdi
+  d7:	mov    $0xffffffff,%edx
+  dc:	mov    $0x20,%r8d
+  e2:	call   0xffffffffd8519848
+; return 0;
+  e7:	xor    %eax,%eax
+  e9:	pop    %r13
+  eb:	pop    %rbx
+  ec:	leave
+  ed:	jmp    0xffffffffd91a6343
+

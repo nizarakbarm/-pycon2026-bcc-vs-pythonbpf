@@ -1,0 +1,4 @@
+int mnop(void * ctx):
+; return 0;
+   0: (b7) r0 = 0
+   1: (95) exit

@@ -1,0 +1,3 @@
+[TIMING] BPF init: 0.716s CPU (compilation+loading)
+[TIMING] Attach: 0.008s CPU
+Ready...

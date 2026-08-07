@@ -1,0 +1,57 @@
+[THREAD] Main poll: ident=140465314551232 native=1301430
+[TIMING] BPF init CPU: 0.026s  wall: 0.051s
+[TIMING] Setup CPU: 0.000s  wall: 0.000s
+Starting to poll... (Ctrl+C to stop)
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+CPU [0] UID 1002 comm: gen_fast
+[TIMING] Poll loop CPU: 0.011s  wall: 1.320s
+[TIMING] Total CPU: 0.038s  wall: 1.372s
+[SUMMARY] Events in using perf

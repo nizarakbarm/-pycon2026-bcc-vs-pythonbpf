@@ -1,0 +1,17 @@
+from pythonbpf import bpf, bpfglobal, BPF
+#from ctypes import c_void_p, c_int64
+#import time
+
+#@bpf
+#@section("kprobe/do_nanosleep")
+#def trace_write(ctx: c_void_p) -> c_int64:
+#    return 0
+
+@bpf
+@bpfglobal
+def LICENSE() -> str:
+    return "GPL"
+
+b = BPF()
+b.load()
+b.attach_all()

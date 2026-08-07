@@ -1,0 +1,16 @@
+# started on Tue Jul 28 13:43:43 2026
+
+
+ Performance counter stats for '/root/learn-pythonbpf/.venv/bin/python3 /root/learn-pythonbpf/syscall_trigger/with_map/map_1_perf_timed_count.py':
+
+       563,276,411      cycles                           #    1.972 GHz                       
+       489,556,797      instructions                     #    0.87  insn per cycle            
+            285.66 msec task-clock                       #    0.281 CPUs utilized             
+               858      context-switches                 #    3.004 K/sec                     
+
+       1.015013165 seconds time elapsed
+
+       0.168105000 seconds user
+       0.091366000 seconds sys
+
+

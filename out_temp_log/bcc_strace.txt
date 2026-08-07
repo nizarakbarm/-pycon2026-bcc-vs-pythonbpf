@@ -1,0 +1,7 @@
+strace: -T/--syscall-times has no effect with -c/--summary-only
+% time     seconds  usecs/call     calls    errors syscall
+------ ----------- ----------- --------- --------- ----------------
+ 98.01    0.145342          13     10517           read
+  1.99    0.002947           5       583        86 openat
+------ ----------- ----------- --------- --------- ----------------
+100.00    0.148289          13     11100        86 total

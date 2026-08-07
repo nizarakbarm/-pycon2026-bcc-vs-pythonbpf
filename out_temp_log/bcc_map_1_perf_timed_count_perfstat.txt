@@ -1,0 +1,16 @@
+# started on Tue Jul 28 13:43:22 2026
+
+
+ Performance counter stats for '/usr/bin/python3 /root/learn-BCC/syscall_trigger/with_map/map_1_perf_timed_count.py':
+
+     2,094,229,496      cycles                           #    2.397 GHz                       
+     1,775,606,164      instructions                     #    0.85  insn per cycle            
+            873.81 msec task-clock                       #    0.431 CPUs utilized             
+             1,552      context-switches                 #    1.776 K/sec                     
+
+       2.025172526 seconds time elapsed
+
+       0.515527000 seconds user
+       0.309291000 seconds sys
+
+

@@ -1,0 +1,43 @@
+bpf_prog_850bb0650d529afc_tracepoint_sysc:
+   0:	endbr64
+   4:	nopl   0x0(%rax,%rax,1)
+   9:	nopl   (%rax)
+   c:	push   %rbp
+   d:	mov    %rsp,%rbp
+  10:	endbr64
+  14:	sub    $0x38,%rsp
+  1b:	call   0xffffffffd8567768
+  20:	shl    $0x20,%rax
+  24:	shr    $0x20,%rax
+  28:	mov    %rax,-0x8(%rbp)
+  2c:	cmp    $0x3ea,%rax
+  33:	jne    0x00000097
+  35:	mov    %rbp,%rsi
+  38:	add    $0xfffffffffffffff8,%rsi
+  3c:	movabs $0xffff8f2d4ce8f800,%rdi
+  46:	call   0xffffffffd8571c38
+  4b:	test   %rax,%rax
+  4e:	je     0x00000054
+  50:	add    $0x38,%rax
+  54:	mov    %rax,-0x10(%rbp)
+  58:	test   %rax,%rax
+  5b:	jne    0x0000005f
+  5d:	jmp    0x0000006f
+  5f:	xor    %edi,%edi
+  61:	mov    -0x10(%rbp),%rsi
+  65:	mov    0x0(%rsi),%rdi
+  69:	add    $0x1,%rdi
+  6d:	jmp    0x00000074
+  6f:	mov    $0x1,%edi
+  74:	mov    %rdi,-0x38(%rbp)
+  78:	mov    %rbp,%rsi
+  7b:	add    $0xfffffffffffffff8,%rsi
+  7f:	mov    %rbp,%rdx
+  82:	add    $0xffffffffffffffc8,%rdx
+  86:	movabs $0xffff8f2d4ce8f800,%rdi
+  90:	xor    %ecx,%ecx
+  92:	call   0xffffffffd8574f18
+  97:	xor    %eax,%eax
+  99:	leave
+  9a:	jmp    0xffffffffd91a6273
+

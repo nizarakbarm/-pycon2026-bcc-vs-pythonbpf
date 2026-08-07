@@ -1,0 +1,2 @@
+cat: /sys/kernel/tracing/trace_pipe: Device or resource busy
+[TIMING] BPF init: 0.020s CPU

@@ -1,0 +1,46 @@
+[THREAD] Main poll: ident=140231891334592 native=1636931
+[TIMING] BPF init CPU: 0.461s  wall: 0.505s
+[TIMING] Setup CPU: 0.001s  wall: 0.001s
+Starting poll... (Ctrl+C to stop)
+CPU [0] UID 1002 comm: gen_fast, count: 20
+[CB_TIME] 1004.6us
+CPU [0] UID 1002 comm: gen_fast, count: 20
+[CB_TIME] 110.8us
+CPU [0] UID 1002 comm: gen_fast, count: 20
+[CB_TIME] 61.8us
+CPU [0] UID 1002 comm: gen_fast, count: 20
+[CB_TIME] 83.4us
+CPU [0] UID 1002 comm: gen_fast, count: 20
+[CB_TIME] 54.6us
+CPU [0] UID 1002 comm: gen_fast, count: 20
+[CB_TIME] 60.1us
+CPU [0] UID 1002 comm: gen_fast, count: 20
+[CB_TIME] 51.1us
+CPU [0] UID 1002 comm: gen_fast, count: 20
+[CB_TIME] 48.5us
+CPU [0] UID 1002 comm: gen_fast, count: 20
+[CB_TIME] 48.2us
+CPU [0] UID 1002 comm: gen_fast, count: 20
+[CB_TIME] 88.2us
+CPU [0] UID 1002 comm: gen_fast, count: 20
+[CB_TIME] 1336.6us
+CPU [0] UID 1002 comm: gen_fast, count: 20
+[CB_TIME] 78.6us
+CPU [0] UID 1002 comm: gen_fast, count: 20
+[CB_TIME] 80.2us
+CPU [0] UID 1002 comm: gen_fast, count: 20
+[CB_TIME] 176.1us
+CPU [0] UID 1002 comm: gen_fast, count: 20
+[CB_TIME] 65.4us
+CPU [0] UID 1002 comm: gen_fast, count: 20
+[CB_TIME] 83.6us
+CPU [0] UID 1002 comm: gen_fast, count: 20
+[CB_TIME] 81.8us
+CPU [0] UID 1002 comm: gen_fast, count: 20
+[CB_TIME] 79.1us
+CPU [0] UID 1002 comm: gen_fast, count: 20
+[CB_TIME] 912.4us
+CPU [0] UID 1002 comm: gen_fast, count: 20
+[TIMING] Poll loop CPU: 0.108s  wall: 2.417s
+[TIMING] Total CPU: 0.569s  wall: 2.923s
+[SUMMARY] Events in map: 20

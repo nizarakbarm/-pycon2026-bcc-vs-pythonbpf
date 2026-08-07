@@ -1,0 +1,117 @@
+ioctl(3, TCGETS, 0x7ffc1d2f2000)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000038>
+ioctl(3, TCGETS, 0x7ffc1d2f2060)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000007>
+ioctl(3, TCGETS, 0x7ffc1d2f1580)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000007>
+ioctl(3, TCGETS, 0x7ffc1d2f1580)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000007>
+ioctl(3, TCGETS, 0x7ffc1d2f1f90)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000007>
+ioctl(3, TCGETS, 0x7ffc1d2f1f90)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(0, TCGETS, {c_iflag=ICRNL|IXON|IXANY|IMAXBEL|IUTF8, c_oflag=NL0|CR0|TAB0|BS0|VT0|FF0|OPOST|ONLCR, c_cflag=B9600|CS8|CREAD, c_lflag=ISIG|ICANON|ECHO|ECHOE|IEXTEN|ECHOCTL|ECHOKE|PENDIN, ...}) = 0 <0.000010>
+ioctl(0, TCGETS, {c_iflag=ICRNL|IXON|IXANY|IMAXBEL|IUTF8, c_oflag=NL0|CR0|TAB0|BS0|VT0|FF0|OPOST|ONLCR, c_cflag=B9600|CS8|CREAD, c_lflag=ISIG|ICANON|ECHO|ECHOE|IEXTEN|ECHOCTL|ECHOKE|PENDIN, ...}) = 0 <0.000006>
+ioctl(1, TCGETS, {c_iflag=ICRNL|IXON|IXANY|IMAXBEL|IUTF8, c_oflag=NL0|CR0|TAB0|BS0|VT0|FF0|OPOST|ONLCR, c_cflag=B9600|CS8|CREAD, c_lflag=ISIG|ICANON|ECHO|ECHOE|IEXTEN|ECHOCTL|ECHOKE|PENDIN, ...}) = 0 <0.000008>
+ioctl(1, TCGETS, {c_iflag=ICRNL|IXON|IXANY|IMAXBEL|IUTF8, c_oflag=NL0|CR0|TAB0|BS0|VT0|FF0|OPOST|ONLCR, c_cflag=B9600|CS8|CREAD, c_lflag=ISIG|ICANON|ECHO|ECHOE|IEXTEN|ECHOCTL|ECHOKE|PENDIN, ...}) = 0 <0.000009>
+ioctl(2, TCGETS, {c_iflag=ICRNL|IXON|IXANY|IMAXBEL|IUTF8, c_oflag=NL0|CR0|TAB0|BS0|VT0|FF0|OPOST|ONLCR, c_cflag=B9600|CS8|CREAD, c_lflag=ISIG|ICANON|ECHO|ECHOE|IEXTEN|ECHOCTL|ECHOKE|PENDIN, ...}) = 0 <0.000006>
+ioctl(2, TCGETS, {c_iflag=ICRNL|IXON|IXANY|IMAXBEL|IUTF8, c_oflag=NL0|CR0|TAB0|BS0|VT0|FF0|OPOST|ONLCR, c_cflag=B9600|CS8|CREAD, c_lflag=ISIG|ICANON|ECHO|ECHOE|IEXTEN|ECHOCTL|ECHOKE|PENDIN, ...}) = 0 <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f1d40)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000009>
+ioctl(3, TCGETS, 0x7ffc1d2f1570)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000011>
+ioctl(3, TCGETS, 0x7ffc1d2f1570)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000014>
+ioctl(3, TCGETS, 0x7ffc1d2f1da0)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000011>
+ioctl(3, TCGETS, 0x7ffc1d2f1530)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000007>
+ioctl(3, TCGETS, 0x7ffc1d2f1530)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f2680)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000007>
+ioctl(3, FIOCLEX)                       = 0 <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f2e30)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f2300)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000007>
+ioctl(3, TCGETS, 0x7ffc1d2f2300)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f1c30)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000008>
+ioctl(3, TCGETS, 0x7ffc1d2f1c30)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f1c30)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000008>
+ioctl(3, TCGETS, 0x7ffc1d2f1c30)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f1560)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000013>
+ioctl(3, TCGETS, 0x7ffc1d2f1560)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f0e90)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000008>
+ioctl(3, TCGETS, 0x7ffc1d2f0e90)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f07c0)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f07c0)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f07c0)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f07c0)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f00f0)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f00f0)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f1560)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000010>
+ioctl(3, TCGETS, 0x7ffc1d2f1560)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f1560)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000014>
+ioctl(3, TCGETS, 0x7ffc1d2f1560)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000007>
+ioctl(3, TCGETS, 0x7ffc1d2f1c30)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f1c30)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f1560)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f1560)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000007>
+ioctl(3, TCGETS, 0x7ffc1d2f0e90)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000009>
+ioctl(3, TCGETS, 0x7ffc1d2f0e90)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000007>
+ioctl(3, TCGETS, 0x7ffc1d2f07c0)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f07c0)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f00f0)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000012>
+ioctl(3, TCGETS, 0x7ffc1d2f00f0)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000007>
+ioctl(3, TCGETS, 0x7ffc1d2efa20)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000007>
+ioctl(3, TCGETS, 0x7ffc1d2efa20)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2ef350)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2ef350)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2ef350)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2ef350)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2ef350)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000021>
+ioctl(3, TCGETS, 0x7ffc1d2ef350)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f03b0)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000007>
+ioctl(3, TCGETS, 0x7ffc1d2f03b0)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2ef8d0)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2ef8d0)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2ef200)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000010>
+ioctl(3, TCGETS, 0x7ffc1d2ef200)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2efce0)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2efce0)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000008>
+ioctl(3, TCGETS, 0x7ffc1d2f07c0)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000008>
+ioctl(3, TCGETS, 0x7ffc1d2f07c0)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f0a80)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000007>
+ioctl(3, TCGETS, 0x7ffc1d2f0a80)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000008>
+ioctl(3, TCGETS, 0x7ffc1d2f1560)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f1560)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000007>
+ioctl(3, TCGETS, 0x7ffc1d2f1c30)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000007>
+ioctl(3, TCGETS, 0x7ffc1d2f1c30)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000008>
+ioctl(3, TCGETS, 0x7ffc1d2f1c30)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000007>
+ioctl(3, TCGETS, 0x7ffc1d2f1c30)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f1560)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000007>
+ioctl(3, TCGETS, 0x7ffc1d2f1560)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000007>
+ioctl(3, TCGETS, 0x7ffc1d2f1560)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000007>
+ioctl(3, TCGETS, 0x7ffc1d2f1560)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f1560)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000009>
+ioctl(3, TCGETS, 0x7ffc1d2f1560)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000008>
+ioctl(3, TCGETS, 0x7ffc1d2f1560)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000009>
+ioctl(3, TCGETS, 0x7ffc1d2f1560)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000012>
+ioctl(3, TCGETS, 0x7ffc1d2f1c30)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000007>
+ioctl(3, TCGETS, 0x7ffc1d2f1c30)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f1560)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000015>
+ioctl(3, TCGETS, 0x7ffc1d2f1560)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000007>
+ioctl(3, TCGETS, 0x7ffc1d2f0e90)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000008>
+ioctl(3, TCGETS, 0x7ffc1d2f0e90)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000007>
+ioctl(3, TCGETS, 0x7ffc1d2f07c0)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000008>
+ioctl(3, TCGETS, 0x7ffc1d2f07c0)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000008>
+ioctl(3, TCGETS, 0x7ffc1d2f00f0)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000009>
+ioctl(3, TCGETS, 0x7ffc1d2f00f0)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f00f0)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f00f0)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f00f0)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000007>
+ioctl(3, TCGETS, 0x7ffc1d2f00f0)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f1c30)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000007>
+ioctl(3, TCGETS, 0x7ffc1d2f1c30)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000010>
+ioctl(3, TCGETS, 0x7ffc1d2f1c30)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000007>
+ioctl(3, TCGETS, 0x7ffc1d2f1c30)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000008>
+ioctl(3, TCGETS, 0x7ffc1d2f1c30)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f1c30)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(3, TCGETS, 0x7ffc1d2f1c30)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000007>
+ioctl(3, TCGETS, 0x7ffc1d2f1c30)        = -1 ENOTTY (Inappropriate ioctl for device) <0.000006>
+ioctl(2, TCGETS, {c_iflag=ICRNL|IXON|IXANY|IMAXBEL|IUTF8, c_oflag=NL0|CR0|TAB0|BS0|VT0|FF0|OPOST|ONLCR, c_cflag=B9600|CS8|CREAD, c_lflag=ISIG|ICANON|ECHO|ECHOE|IEXTEN|ECHOCTL|ECHOKE|PENDIN, ...}) = 0 <0.000014>
+bpf(BPF_PROG_LOAD, {prog_type=BPF_PROG_TYPE_SOCKET_FILTER, insn_cnt=2, insns=0x7ffc1d2f1960, license="GPL", log_level=0, log_size=0, log_buf=NULL, kern_version=KERNEL_VERSION(0, 0, 0), prog_flags=0, prog_name="", prog_ifindex=0, expected_attach_type=BPF_CGROUP_INET_INGRESS, prog_btf_fd=0, func_info_rec_size=0, func_info=NULL, func_info_cnt=0, line_info_rec_size=0, line_info=NULL, line_info_cnt=0, attach_btf_id=0, attach_prog_fd=0, core_relo_cnt=0, fd_array=NULL, core_relos=NULL, core_relo_rec_size=0, log_true_size=0, prog_token_fd=0}, 148) = 3 <0.000166>
+bpf(BPF_BTF_LOAD, {btf="\237\353\1\0\30\0\0\0\0\0\0\0\324\0\0\0\324\0\0\0\201\0\0\0\0\0\0\0\0\0\0\2"..., btf_log_buf=NULL, btf_size=365, btf_log_size=0, btf_log_level=0, btf_log_true_size=0, btf_flags=0, btf_token_fd=0}, 40) = 3 <0.000057>
+bpf(BPF_PROG_LOAD, {prog_type=BPF_PROG_TYPE_SOCKET_FILTER, insn_cnt=2, insns=0x7ffc1d2f1da0, license="GPL", log_level=0, log_size=0, log_buf=NULL, kern_version=KERNEL_VERSION(0, 0, 0), prog_flags=0, prog_name="libbpf_nametest", prog_ifindex=0, expected_attach_type=BPF_CGROUP_INET_INGRESS, prog_btf_fd=0, func_info_rec_size=0, func_info=NULL, func_info_cnt=0, line_info_rec_size=0, line_info=NULL, line_info_cnt=0, attach_btf_id=0, attach_prog_fd=0, core_relo_cnt=0, fd_array=NULL, core_relos=NULL, core_relo_rec_size=0, log_true_size=0, prog_token_fd=0}, 148) = 4 <0.000088>
+bpf(BPF_PROG_LOAD, {prog_type=BPF_PROG_TYPE_KPROBE, insn_cnt=2, insns=0x7f99375d1000, license="GPL", log_level=0, log_size=0, log_buf=NULL, kern_version=KERNEL_VERSION(6, 12, 0), prog_flags=0, prog_name="mnop", prog_ifindex=0, expected_attach_type=BPF_CGROUP_INET_INGRESS, prog_btf_fd=3, func_info_rec_size=8, func_info=0x55c9aade7f20, func_info_cnt=1, line_info_rec_size=16, line_info=0x55c9aade5990, line_info_cnt=1, attach_btf_id=0, attach_prog_fd=0, core_relo_cnt=0, fd_array=NULL, core_relos=NULL, core_relo_rec_size=0, log_true_size=0, prog_token_fd=0, fd_array_cnt=0}, 152) = 4 <0.000077>
+ioctl(5, PERF_EVENT_IOC_SET_BPF, 4)     = 0 <0.000015>
+ioctl(5, PERF_EVENT_IOC_ENABLE, 0)      = 0 <0.000009>
+--- SIGINT {si_signo=SIGINT, si_code=SI_KERNEL} ---
+ioctl(5, PERF_EVENT_IOC_DISABLE, 0)     = 0 <0.000014>
++++ exited with 0 +++

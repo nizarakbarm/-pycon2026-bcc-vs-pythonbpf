@@ -1,0 +1,7 @@
+[THREAD] Main poll: ident=140481246336448 native=1301766
+[TIMING] BPF init CPU: 0.025s  wall: 0.052s
+[TIMING] Setup CPU: 0.000s  wall: 0.000s
+Starting to poll... (Ctrl+C to stop)
+[TIMING] Poll loop CPU: 9.546s  wall: 30.210s
+[TIMING] Total CPU: 9.571s  wall: 30.263s
+[SUMMARY] Events in using perf
