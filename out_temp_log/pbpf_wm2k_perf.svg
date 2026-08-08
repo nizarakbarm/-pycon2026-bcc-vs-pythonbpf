@@ -1,0 +1,3906 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1200" height="966" onload="init(evt)" viewBox="0 0 1200 966" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+<!-- NOTES:  -->
+<defs>
+	<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+		<stop stop-color="#eeeeee" offset="5%" />
+		<stop stop-color="#eeeeb0" offset="95%" />
+	</linearGradient>
+</defs>
+<style type="text/css">
+	text { font-family:Verdana; font-size:12px; fill:rgb(0,0,0); }
+	#search, #ignorecase { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show, #ignorecase:hover, #ignorecase.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:17px}
+	#unzoom { cursor:pointer; }
+	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching, currentSearchTerm, ignorecase, ignorecaseBtn;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		ignorecaseBtn = document.getElementById("ignorecase");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+		currentSearchTerm = null;
+
+		// use GET parameters to restore a flamegraphs state.
+		var params = get_params();
+		if (params.x && params.y)
+			zoom(find_group(document.querySelector('[x="' + params.x + '"][y="' + params.y + '"]')));
+                if (params.s) search(params.s);
+	}
+
+	// event listeners
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom(true);
+			zoom(target);
+			if (!document.querySelector('.parent')) {
+				// we have basically done a clearzoom so clear the url
+				var params = get_params();
+				if (params.x) delete params.x;
+				if (params.y) delete params.y;
+				history.replaceState(null, null, parse_params(params));
+				unzoombtn.classList.add("hide");
+				return;
+			}
+
+			// set parameters for zoom state
+			var el = target.querySelector("rect");
+			if (el && el.attributes && el.attributes.y && el.attributes._orig_x) {
+				var params = get_params()
+				params.x = el.attributes._orig_x.value;
+				params.y = el.attributes.y.value;
+				history.replaceState(null, null, parse_params(params));
+			}
+		}
+		else if (e.target.id == "unzoom") clearzoom();
+		else if (e.target.id == "search") search_prompt();
+		else if (e.target.id == "ignorecase") toggle_ignorecase();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Function: " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	// ctrl-I to toggle case-sensitive search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+		else if (e.ctrlKey && e.keyCode === 73) {
+			e.preventDefault();
+			toggle_ignorecase();
+		}
+	}, false)
+
+	// functions
+	function get_params() {
+		var params = {};
+		var paramsarr = window.location.search.substr(1).split('&');
+		for (var i = 0; i < paramsarr.length; ++i) {
+			var tmp = paramsarr[i].split("=");
+			if (!tmp[0] || !tmp[1]) continue;
+			params[tmp[0]]  = decodeURIComponent(tmp[1]);
+		}
+		return params;
+	}
+	function parse_params(params) {
+		var uri = "?";
+		for (var key in params) {
+			uri += key + '=' + encodeURIComponent(params[key]) + '&';
+		}
+		if (uri.slice(-1) == "&")
+			uri = uri.substring(0, uri.length - 1);
+		if (uri == '?')
+			uri = window.location.href.split('?')[0];
+		return uri;
+	}
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 12 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		var sl = t.getSubStringLength(0, txt.length);
+		// check if only whitespace or if we can fit the entire string into width w
+		if (/^ *$/.test(txt) || sl < w)
+			return;
+
+		// this isn't perfect, but gives a good starting point
+		// and avoids calling getSubStringLength too often
+		var start = Math.floor((w/sl) * txt.length);
+		for (var x = start; x > 0; x = x-2) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (0 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+		search();
+	}
+	function unzoom(dont_update_text) {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			if(!dont_update_text) update_text(el[i]);
+		}
+		search();
+	}
+	function clearzoom() {
+		unzoom();
+
+		// remove zoom state
+		var params = get_params();
+		if (params.x) delete params.x;
+		if (params.y) delete params.y;
+		history.replaceState(null, null, parse_params(params));
+	}
+
+	// search
+	function toggle_ignorecase() {
+		ignorecase = !ignorecase;
+		if (ignorecase) {
+			ignorecaseBtn.classList.add("show");
+		} else {
+			ignorecaseBtn.classList.remove("show");
+		}
+		reset_search();
+		search();
+	}
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+		var params = get_params();
+		delete params.s;
+		history.replaceState(null, null, parse_params(params));
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)"
+			    + (ignorecase ? ", ignoring case" : "")
+			    + "\nPress Ctrl-i to toggle case sensitivity", "");
+			if (term != null) search(term);
+		} else {
+			reset_search();
+			searching = 0;
+			currentSearchTerm = null;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		if (term) currentSearchTerm = term;
+		if (currentSearchTerm === null) return;
+
+		var re = new RegExp(currentSearchTerm, ignorecase ? 'i' : '');
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+		var params = get_params();
+		params.s = currentSearchTerm;
+		history.replaceState(null, null, parse_params(params));
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]>
+</script>
+<rect x="0.0" y="0" width="1200.0" height="966.0" fill="url(#background)"  />
+<text id="title" x="600.00" y="24" >Flame Graph</text>
+<text id="details" x="10.00" y="949" > </text>
+<text id="unzoom" x="10.00" y="24" class="hide">Reset Zoom</text>
+<text id="search" x="1090.00" y="24" >Search</text>
+<text id="ignorecase" x="1174.00" y="24" >ic</text>
+<text id="matched" x="1090.00" y="949" > </text>
+<g id="frames">
+<g >
+<title>PyObject_CallFunction (13,951,735 samples, 1.65%)</title><rect x="267.7" y="405" width="19.5" height="15.0" fill="rgb(213,40,9)" rx="2" ry="2" />
+<text  x="270.68" y="415.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (14,154,169 samples, 1.68%)</title><rect x="102.6" y="549" width="19.8" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="105.63" y="559.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (39,796,389 samples, 4.72%)</title><rect x="175.4" y="437" width="55.6" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="178.38" y="447.5" >PyEva..</text>
+</g>
+<g >
+<title>__handle_mm_fault (3,343,118 samples, 0.40%)</title><rect x="454.6" y="421" width="4.6" height="15.0" fill="rgb(207,9,2)" rx="2" ry="2" />
+<text  x="457.55" y="431.5" ></text>
+</g>
+<g >
+<title>__libc_start_main@@GLIBC_2.34 (13,156,656 samples, 1.56%)</title><rect x="10.0" y="869" width="18.4" height="15.0" fill="rgb(229,113,27)" rx="2" ry="2" />
+<text  x="13.00" y="879.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="389" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="399.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (9,177,604 samples, 1.09%)</title><rect x="488.0" y="693" width="12.9" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="491.03" y="703.5" ></text>
+</g>
+<g >
+<title>std::_Head_base&lt;0ul, pybind11::detail::type_caster&lt;BpfMap, void&gt;, false&gt;::_Head_base (11,290,026 samples, 1.34%)</title><rect x="1073.2" y="309" width="15.8" height="15.0" fill="rgb(207,11,2)" rx="2" ry="2" />
+<text  x="1076.21" y="319.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,570,826 samples, 1.37%)</title><rect x="984.2" y="325" width="16.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="987.15" y="335.5" ></text>
+</g>
+<g >
+<title>__handle_mm_fault (13,156,656 samples, 1.56%)</title><rect x="10.0" y="709" width="18.4" height="15.0" fill="rgb(207,9,2)" rx="2" ry="2" />
+<text  x="13.00" y="719.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,231,900 samples, 1.57%)</title><rect x="84.1" y="533" width="18.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="87.12" y="543.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,762,235 samples, 1.63%)</title><rect x="156.1" y="533" width="19.3" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="159.13" y="543.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (45,200,905 samples, 5.36%)</title><rect x="437.6" y="773" width="63.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="440.64" y="783.5" >[libpy..</text>
+</g>
+<g >
+<title>_dl_start (476,505 samples, 0.06%)</title><rect x="1182.0" y="869" width="0.7" height="15.0" fill="rgb(237,151,36)" rx="2" ry="2" />
+<text  x="1185.04" y="879.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportFrozenModuleObject (3,343,118 samples, 0.40%)</title><rect x="454.6" y="741" width="4.6" height="15.0" fill="rgb(254,228,54)" rx="2" ry="2" />
+<text  x="457.55" y="751.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (67,831,629 samples, 8.04%)</title><rect x="577.9" y="613" width="94.9" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="580.94" y="623.5" >PyEval_Eval..</text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (13,974,633 samples, 1.66%)</title><rect x="287.2" y="341" width="19.5" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="290.20" y="351.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (34,819,369 samples, 4.13%)</title><rect x="1008.3" y="213" width="48.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1011.33" y="223.5" >[lib..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (52,259,336 samples, 6.19%)</title><rect x="364.5" y="501" width="73.1" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="367.55" y="511.5" >_PyEval_..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,231,900 samples, 1.57%)</title><rect x="84.1" y="565" width="18.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="87.12" y="575.5" ></text>
+</g>
+<g >
+<title>PyObject_Vectorcall (11,085,125 samples, 1.31%)</title><rect x="140.6" y="293" width="15.5" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="143.63" y="303.5" ></text>
+</g>
+<g >
+<title>PyObject_VectorcallMethod (34,819,369 samples, 4.13%)</title><rect x="1008.3" y="325" width="48.7" height="15.0" fill="rgb(236,142,34)" rx="2" ry="2" />
+<text  x="1011.33" y="335.5" >PyOb..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (14,154,169 samples, 1.68%)</title><rect x="102.6" y="485" width="19.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="105.63" y="495.5" ></text>
+</g>
+<g >
+<title>PyImport_Import (11,085,125 samples, 1.31%)</title><rect x="140.6" y="805" width="15.5" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="143.63" y="815.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (13,231,900 samples, 1.57%)</title><rect x="84.1" y="725" width="18.5" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="87.12" y="735.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,353,427 samples, 1.58%)</title><rect x="654.1" y="341" width="18.7" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="657.14" y="351.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,543,810 samples, 1.61%)</title><rect x="791.9" y="645" width="19.0" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="794.92" y="655.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (3,550,791 samples, 0.42%)</title><rect x="483.1" y="725" width="4.9" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="486.07" y="735.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (10,519,939 samples, 1.25%)</title><rect x="468.4" y="549" width="14.7" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="471.35" y="559.5" ></text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (13,786,205 samples, 1.63%)</title><rect x="734.1" y="517" width="19.3" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="737.13" y="527.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (6,520,899 samples, 0.77%)</title><rect x="459.2" y="709" width="9.2" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="462.23" y="719.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (27,725,521 samples, 3.29%)</title><rect x="306.7" y="341" width="38.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="309.75" y="351.5" >[li..</text>
+</g>
+<g >
+<title>virtnet_poll (4,914,771 samples, 0.58%)</title><rect x="772.5" y="581" width="6.9" height="15.0" fill="rgb(225,93,22)" rx="2" ry="2" />
+<text  x="775.51" y="591.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (39,796,389 samples, 4.72%)</title><rect x="175.4" y="357" width="55.6" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="178.38" y="367.5" >_PyEv..</text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (13,010,491 samples, 1.54%)</title><rect x="122.4" y="437" width="18.2" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="125.43" y="447.5" ></text>
+</g>
+<g >
+<title>__common_interrupt (6,136,472 samples, 0.73%)</title><rect x="930.4" y="373" width="8.6" height="15.0" fill="rgb(237,150,36)" rx="2" ry="2" />
+<text  x="933.38" y="383.5" ></text>
+</g>
+<g >
+<title>PyEval_RestoreThread (7,340,560 samples, 0.87%)</title><rect x="1089.0" y="549" width="10.3" height="15.0" fill="rgb(212,36,8)" rx="2" ry="2" />
+<text  x="1092.01" y="559.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="501" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="511.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (27,774,461 samples, 3.29%)</title><rect x="615.3" y="277" width="38.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="618.29" y="287.5" >[li..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (14,154,169 samples, 1.68%)</title><rect x="102.6" y="213" width="19.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="105.63" y="223.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="373" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="383.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,077,241 samples, 1.55%)</title><rect x="577.9" y="421" width="18.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="580.94" y="431.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="629" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="639.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (486,987,656 samples, 57.73%)</title><rect x="500.9" y="805" width="681.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="503.87" y="815.5" >[libpython3.13.so.1.0]</text>
+</g>
+<g >
+<title>std::_Hashtable&lt;std::type_index, std::pair&lt;std::type_index const, pybind11::detail::type_info*&gt;, std::allocator&lt;std::pair&lt;std::type_index const, pybind11::detail::type_info*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;std::type_index&gt;, std::hash&lt;std::type_index&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, true&gt; &gt;::_M_find_before_node (11,290,026 samples, 1.34%)</title><rect x="1073.2" y="117" width="15.8" height="15.0" fill="rgb(220,71,17)" rx="2" ry="2" />
+<text  x="1076.21" y="127.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,010,491 samples, 1.54%)</title><rect x="122.4" y="517" width="18.2" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="125.43" y="527.5" ></text>
+</g>
+<g >
+<title>vma_alloc_folio_noprof (13,892,765 samples, 1.65%)</title><rect x="306.7" y="133" width="19.5" height="15.0" fill="rgb(218,61,14)" rx="2" ry="2" />
+<text  x="309.75" y="143.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (12,746,550 samples, 1.51%)</title><rect x="383.8" y="373" width="17.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="386.76" y="383.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (13,231,900 samples, 1.57%)</title><rect x="84.1" y="629" width="18.5" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="87.12" y="639.5" ></text>
+</g>
+<g >
+<title>exc_page_fault (13,156,656 samples, 1.56%)</title><rect x="10.0" y="757" width="18.4" height="15.0" fill="rgb(212,35,8)" rx="2" ry="2" />
+<text  x="13.00" y="767.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (12,746,550 samples, 1.51%)</title><rect x="383.8" y="341" width="17.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="386.76" y="351.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (11,085,125 samples, 1.31%)</title><rect x="140.6" y="517" width="15.5" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="143.63" y="527.5" ></text>
+</g>
+<g >
+<title>__alloc_frozen_pages_noprof (13,892,765 samples, 1.65%)</title><rect x="306.7" y="85" width="19.5" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="309.75" y="95.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (9,177,604 samples, 1.09%)</title><rect x="488.0" y="597" width="12.9" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="491.03" y="607.5" ></text>
+</g>
+<g >
+<title>PyObject_CallFunction (13,598,462 samples, 1.61%)</title><rect x="345.5" y="325" width="19.0" height="15.0" fill="rgb(213,40,9)" rx="2" ry="2" />
+<text  x="348.53" y="335.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="341" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="351.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (13,010,491 samples, 1.54%)</title><rect x="122.4" y="421" width="18.2" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="125.43" y="431.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (12,746,550 samples, 1.51%)</title><rect x="383.8" y="293" width="17.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="386.76" y="303.5" ></text>
+</g>
+<g >
+<title>pybind11::detail::get_global_type_info (11,290,026 samples, 1.34%)</title><rect x="1073.2" y="181" width="15.8" height="15.0" fill="rgb(240,165,39)" rx="2" ry="2" />
+<text  x="1076.21" y="191.5" ></text>
+</g>
+<g >
+<title>pybind11::detail::get_type_info (11,290,026 samples, 1.34%)</title><rect x="1073.2" y="229" width="15.8" height="15.0" fill="rgb(242,170,40)" rx="2" ry="2" />
+<text  x="1076.21" y="239.5" ></text>
+</g>
+<g >
+<title>__libc_start_call_main (532,188,561 samples, 63.08%)</title><rect x="437.6" y="853" width="744.4" height="15.0" fill="rgb(210,26,6)" rx="2" ry="2" />
+<text  x="440.64" y="863.5" >__libc_start_call_main</text>
+</g>
+<g >
+<title>__schedule (50,016,824 samples, 5.93%)</title><rect x="869.0" y="437" width="70.0" height="15.0" fill="rgb(227,103,24)" rx="2" ry="2" />
+<text  x="872.00" y="447.5" >__sched..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,010,491 samples, 1.54%)</title><rect x="122.4" y="741" width="18.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="125.43" y="751.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,738,833 samples, 1.63%)</title><rect x="364.5" y="389" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="367.55" y="399.5" ></text>
+</g>
+<g >
+<title>[_posixsubprocess.cpython-313-x86_64-linux-gnu.so] (13,786,205 samples, 1.63%)</title><rect x="734.1" y="565" width="19.3" height="15.0" fill="rgb(218,61,14)" rx="2" ry="2" />
+<text  x="737.13" y="575.5" ></text>
+</g>
+<g >
+<title>pybind11::cpp_function::dispatcher (11,290,026 samples, 1.34%)</title><rect x="1073.2" y="405" width="15.8" height="15.0" fill="rgb(221,75,18)" rx="2" ry="2" />
+<text  x="1076.21" y="415.5" ></text>
+</g>
+<g >
+<title>pybind11::detail::loader_life_support::loader_life_support (6,939,269 samples, 0.82%)</title><rect x="1136.9" y="661" width="9.7" height="15.0" fill="rgb(230,115,27)" rx="2" ry="2" />
+<text  x="1139.90" y="671.5" ></text>
+</g>
+<g >
+<title>dl_main (476,505 samples, 0.06%)</title><rect x="1182.0" y="837" width="0.7" height="15.0" fill="rgb(236,145,34)" rx="2" ry="2" />
+<text  x="1185.04" y="847.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,010,491 samples, 1.54%)</title><rect x="122.4" y="341" width="18.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="125.43" y="351.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (12,746,550 samples, 1.51%)</title><rect x="383.8" y="405" width="17.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="386.76" y="415.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="645" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="655.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (14,154,169 samples, 1.68%)</title><rect x="102.6" y="373" width="19.8" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="105.63" y="383.5" ></text>
+</g>
+<g >
+<title>_dl_catch_exception (25,773,953 samples, 3.06%)</title><rect x="401.6" y="357" width="36.0" height="15.0" fill="rgb(253,223,53)" rx="2" ry="2" />
+<text  x="404.59" y="367.5" >_dl..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="549" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="559.5" ></text>
+</g>
+<g >
+<title>_PyList_AppendTakeRefListResize (3,343,118 samples, 0.40%)</title><rect x="454.6" y="549" width="4.6" height="15.0" fill="rgb(241,165,39)" rx="2" ry="2" />
+<text  x="457.55" y="559.5" ></text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (103,756,853 samples, 12.30%)</title><rect x="839.0" y="533" width="145.2" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="842.02" y="543.5" >entry_SYSCALL_64_a..</text>
+</g>
+<g >
+<title>__irq_exit_rcu (160,126 samples, 0.02%)</title><rect x="1182.5" y="773" width="0.2" height="15.0" fill="rgb(227,101,24)" rx="2" ry="2" />
+<text  x="1185.48" y="783.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (39,796,389 samples, 4.72%)</title><rect x="175.4" y="693" width="55.6" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="178.38" y="703.5" >PyEva..</text>
+</g>
+<g >
+<title>std::__new_allocator&lt;unsigned long&gt;::deallocate (6,668,434 samples, 0.79%)</title><rect x="1127.6" y="565" width="9.3" height="15.0" fill="rgb(243,174,41)" rx="2" ry="2" />
+<text  x="1130.57" y="575.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (40,536,163 samples, 4.81%)</title><rect x="1000.3" y="421" width="56.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1003.34" y="431.5" >[libpy..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,085,125 samples, 1.31%)</title><rect x="140.6" y="709" width="15.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="143.63" y="719.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (14,154,169 samples, 1.68%)</title><rect x="102.6" y="645" width="19.8" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="105.63" y="655.5" ></text>
+</g>
+<g >
+<title>_PyImport_GetModuleAttrString (9,177,604 samples, 1.09%)</title><rect x="488.0" y="757" width="12.9" height="15.0" fill="rgb(227,104,24)" rx="2" ry="2" />
+<text  x="491.03" y="767.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (65,857,798 samples, 7.81%)</title><rect x="345.5" y="837" width="92.1" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="348.53" y="847.5" >PyEval_Eval..</text>
+</g>
+<g >
+<title>PyObject_CallNoArgs (27,774,461 samples, 3.29%)</title><rect x="615.3" y="389" width="38.8" height="15.0" fill="rgb(241,168,40)" rx="2" ry="2" />
+<text  x="618.29" y="399.5" >PyO..</text>
+</g>
+<g >
+<title>__irqentry_text_start (12,193,413 samples, 1.45%)</title><rect x="1040.0" y="101" width="17.0" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="1042.98" y="111.5" ></text>
+</g>
+<g >
+<title>__vfork (13,786,205 samples, 1.63%)</title><rect x="734.1" y="533" width="19.3" height="15.0" fill="rgb(220,70,16)" rx="2" ry="2" />
+<text  x="737.13" y="543.5" ></text>
+</g>
+<g >
+<title>vfs_statx_path (12,088,554 samples, 1.43%)</title><rect x="437.6" y="437" width="17.0" height="15.0" fill="rgb(207,11,2)" rx="2" ry="2" />
+<text  x="440.64" y="447.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (65,674,888 samples, 7.78%)</title><rect x="687.5" y="693" width="91.9" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="690.52" y="703.5" >[libpython..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (55,651,889 samples, 6.60%)</title><rect x="267.7" y="533" width="77.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="270.68" y="543.5" >[libpyth..</text>
+</g>
+<g >
+<title>kernel_clone (13,786,205 samples, 1.63%)</title><rect x="734.1" y="469" width="19.3" height="15.0" fill="rgb(241,169,40)" rx="2" ry="2" />
+<text  x="737.13" y="479.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (482,680,510 samples, 57.22%)</title><rect x="506.9" y="757" width="675.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="509.89" y="767.5" >[libpython3.13.so.1.0]</text>
+</g>
+<g >
+<title>arch_exit_to_user_mode_prepare.isra.0 (9,798,827 samples, 1.16%)</title><rect x="1026.3" y="101" width="13.7" height="15.0" fill="rgb(251,215,51)" rx="2" ry="2" />
+<text  x="1029.28" y="111.5" ></text>
+</g>
+<g >
+<title>std::enable_if&lt;!std::is_void&lt;int&gt;::value, int&gt;::type pybind11::detail::argument_loader&lt;PerfEventArray*, int&gt;::call&lt;int, pybind11::detail::void_type, pybind11::cpp_function::cpp_function&lt;int, PerfEventArray, int, pybind11::name, pybind11::is_method, pybind11::sibling, pybind11::arg&gt; (211,361,540 samples, 25.05%)</title><rect x="819.4" y="629" width="295.6" height="15.0" fill="rgb(226,97,23)" rx="2" ry="2" />
+<text  x="822.37" y="639.5" >std::enable_if&lt;!std::is_void&lt;int&gt;::valu..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (27,774,461 samples, 3.29%)</title><rect x="615.3" y="357" width="38.8" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="618.29" y="367.5" >_Py..</text>
+</g>
+<g >
+<title>PyEval_EvalCode (26,485,383 samples, 3.14%)</title><rect x="364.5" y="453" width="37.1" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="367.55" y="463.5" >PyE..</text>
+</g>
+<g >
+<title>PyImport_ImportModule (12,088,554 samples, 1.43%)</title><rect x="437.6" y="757" width="17.0" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="440.64" y="767.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,085,125 samples, 1.31%)</title><rect x="140.6" y="757" width="15.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="143.63" y="767.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (10,519,939 samples, 1.25%)</title><rect x="468.4" y="501" width="14.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="471.35" y="511.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (6,520,899 samples, 0.77%)</title><rect x="459.2" y="725" width="9.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="462.23" y="735.5" ></text>
+</g>
+<g >
+<title>amd_brs_disable_all (8,988,090 samples, 1.07%)</title><rect x="881.6" y="373" width="12.6" height="15.0" fill="rgb(234,135,32)" rx="2" ry="2" />
+<text  x="884.63" y="383.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (14,154,169 samples, 1.68%)</title><rect x="102.6" y="565" width="19.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="105.63" y="575.5" ></text>
+</g>
+<g >
+<title>__GI___libc_open (13,598,462 samples, 1.61%)</title><rect x="345.5" y="245" width="19.0" height="15.0" fill="rgb(249,202,48)" rx="2" ry="2" />
+<text  x="348.53" y="255.5" ></text>
+</g>
+<g >
+<title>pybind11::detail::loader_life_support::~loader_life_support (5,693,736 samples, 0.67%)</title><rect x="1146.6" y="661" width="8.0" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="1149.60" y="671.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,566,010 samples, 1.37%)</title><rect x="1057.0" y="357" width="16.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1060.04" y="367.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (53,558,624 samples, 6.35%)</title><rect x="156.1" y="869" width="74.9" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="159.13" y="879.5" >_PyEval_..</text>
+</g>
+<g >
+<title>PyObject_Vectorcall (6,019,343 samples, 0.71%)</title><rect x="679.1" y="709" width="8.4" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="682.10" y="719.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="165" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="175.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (67,831,629 samples, 8.04%)</title><rect x="577.9" y="501" width="94.9" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="580.94" y="511.5" >[libpython3..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (27,774,461 samples, 3.29%)</title><rect x="615.3" y="309" width="38.8" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="618.29" y="319.5" >_Py..</text>
+</g>
+<g >
+<title>perf_buffer__process_records (74,963,025 samples, 8.89%)</title><rect x="984.2" y="549" width="104.8" height="15.0" fill="rgb(216,52,12)" rx="2" ry="2" />
+<text  x="987.15" y="559.5" >perf_buffer_..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (39,796,389 samples, 4.72%)</title><rect x="175.4" y="373" width="55.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="178.38" y="383.5" >[libp..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (41,700,154 samples, 4.94%)</title><rect x="287.2" y="405" width="58.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="290.20" y="415.5" >[libpy..</text>
+</g>
+<g >
+<title>realloc (3,343,118 samples, 0.40%)</title><rect x="454.6" y="517" width="4.6" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="457.55" y="527.5" ></text>
+</g>
+<g >
+<title>do_syscall_64 (103,756,853 samples, 12.30%)</title><rect x="839.0" y="517" width="145.2" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="842.02" y="527.5" >do_syscall_64</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (67,831,629 samples, 8.04%)</title><rect x="577.9" y="549" width="94.9" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="580.94" y="559.5" >[libpython3..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,101,248 samples, 1.55%)</title><rect x="249.4" y="261" width="18.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="252.36" y="271.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,951,735 samples, 1.65%)</title><rect x="267.7" y="357" width="19.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="270.68" y="367.5" ></text>
+</g>
+<g >
+<title>_dl_relocate_object (25,773,953 samples, 3.06%)</title><rect x="401.6" y="293" width="36.0" height="15.0" fill="rgb(231,120,28)" rx="2" ry="2" />
+<text  x="404.59" y="303.5" >_dl..</text>
+</g>
+<g >
+<title>do_user_addr_fault (13,892,765 samples, 1.65%)</title><rect x="306.7" y="197" width="19.5" height="15.0" fill="rgb(228,108,25)" rx="2" ry="2" />
+<text  x="309.75" y="207.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (55,651,889 samples, 6.60%)</title><rect x="267.7" y="693" width="77.8" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="270.68" y="703.5" >_PyEval_..</text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (10,519,939 samples, 1.25%)</title><rect x="468.4" y="661" width="14.7" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="471.35" y="671.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (14,154,169 samples, 1.68%)</title><rect x="102.6" y="789" width="19.8" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="105.63" y="799.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="757" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="767.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (34,819,369 samples, 4.13%)</title><rect x="1008.3" y="389" width="48.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1011.33" y="399.5" >[lib..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (52,259,336 samples, 6.19%)</title><rect x="364.5" y="517" width="73.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="367.55" y="527.5" >[libpyth..</text>
+</g>
+<g >
+<title>_PyObject_GenericGetAttrWithDict (12,928,985 samples, 1.53%)</title><rect x="194.2" y="213" width="18.1" height="15.0" fill="rgb(206,6,1)" rx="2" ry="2" />
+<text  x="197.23" y="223.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (55,651,889 samples, 6.60%)</title><rect x="267.7" y="517" width="77.8" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="270.68" y="527.5" >PyEval_E..</text>
+</g>
+<g >
+<title>_PyObject_GC_New (13,892,765 samples, 1.65%)</title><rect x="306.7" y="277" width="19.5" height="15.0" fill="rgb(238,152,36)" rx="2" ry="2" />
+<text  x="309.75" y="287.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (55,651,889 samples, 6.60%)</title><rect x="267.7" y="661" width="77.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="270.68" y="671.5" >[libpyth..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (45,200,905 samples, 5.36%)</title><rect x="437.6" y="789" width="63.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="440.64" y="799.5" >[libpy..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (39,796,389 samples, 4.72%)</title><rect x="175.4" y="581" width="55.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="178.38" y="591.5" >[libp..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (9,177,604 samples, 1.09%)</title><rect x="488.0" y="533" width="12.9" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="491.03" y="543.5" ></text>
+</g>
+<g >
+<title>PyModule_ExecDef (14,154,169 samples, 1.68%)</title><rect x="102.6" y="293" width="19.8" height="15.0" fill="rgb(221,76,18)" rx="2" ry="2" />
+<text  x="105.63" y="303.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,566,010 samples, 1.37%)</title><rect x="1057.0" y="293" width="16.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1060.04" y="303.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (14,154,169 samples, 1.68%)</title><rect x="102.6" y="821" width="19.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="105.63" y="831.5" ></text>
+</g>
+<g >
+<title>pybind11::detail::type_caster_base&lt;BpfMap&gt;::type_caster_base (11,290,026 samples, 1.34%)</title><rect x="1073.2" y="277" width="15.8" height="15.0" fill="rgb(241,167,40)" rx="2" ry="2" />
+<text  x="1076.21" y="287.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,231,900 samples, 1.57%)</title><rect x="84.1" y="405" width="18.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="87.12" y="415.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,010,491 samples, 1.54%)</title><rect x="122.4" y="357" width="18.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="125.43" y="367.5" ></text>
+</g>
+<g >
+<title>pybind11::detail::type_caster_generic::type_caster_generic (11,290,026 samples, 1.34%)</title><rect x="1073.2" y="245" width="15.8" height="15.0" fill="rgb(225,95,22)" rx="2" ry="2" />
+<text  x="1076.21" y="255.5" ></text>
+</g>
+<g >
+<title>do_anonymous_page (13,892,765 samples, 1.65%)</title><rect x="306.7" y="149" width="19.5" height="15.0" fill="rgb(238,155,37)" rx="2" ry="2" />
+<text  x="309.75" y="159.5" ></text>
+</g>
+<g >
+<title>_int_realloc (3,343,118 samples, 0.40%)</title><rect x="454.6" y="501" width="4.6" height="15.0" fill="rgb(230,117,28)" rx="2" ry="2" />
+<text  x="457.55" y="511.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (68,753,137 samples, 8.15%)</title><rect x="249.4" y="869" width="96.1" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="252.36" y="879.5" >PyImport_Im..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (11,085,125 samples, 1.31%)</title><rect x="140.6" y="469" width="15.5" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="143.63" y="479.5" ></text>
+</g>
+<g >
+<title>dlopen_doit (25,773,953 samples, 3.06%)</title><rect x="401.6" y="389" width="36.0" height="15.0" fill="rgb(211,31,7)" rx="2" ry="2" />
+<text  x="404.59" y="399.5" >dlo..</text>
+</g>
+<g >
+<title>__handle_mm_fault (13,462,351 samples, 1.60%)</title><rect x="46.7" y="741" width="18.8" height="15.0" fill="rgb(207,9,2)" rx="2" ry="2" />
+<text  x="49.65" y="751.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,738,833 samples, 1.63%)</title><rect x="364.5" y="373" width="19.3" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="367.55" y="383.5" ></text>
+</g>
+<g >
+<title>__irq_exit_rcu (4,914,771 samples, 0.58%)</title><rect x="772.5" y="645" width="6.9" height="15.0" fill="rgb(227,101,24)" rx="2" ry="2" />
+<text  x="775.51" y="655.5" ></text>
+</g>
+<g >
+<title>_PyObject_MakeTpCall (13,738,833 samples, 1.63%)</title><rect x="364.5" y="293" width="19.3" height="15.0" fill="rgb(229,113,27)" rx="2" ry="2" />
+<text  x="367.55" y="303.5" ></text>
+</g>
+<g >
+<title>llvm::MachineFunctionPass::runOnFunction (13,328,113 samples, 1.58%)</title><rect x="65.5" y="805" width="18.6" height="15.0" fill="rgb(246,192,45)" rx="2" ry="2" />
+<text  x="68.48" y="815.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (11,085,125 samples, 1.31%)</title><rect x="140.6" y="357" width="15.5" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="143.63" y="367.5" ></text>
+</g>
+<g >
+<title>__tls_get_addr (13,101,248 samples, 1.55%)</title><rect x="249.4" y="245" width="18.3" height="15.0" fill="rgb(246,191,45)" rx="2" ry="2" />
+<text  x="252.36" y="255.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,892,765 samples, 1.65%)</title><rect x="306.7" y="261" width="19.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="309.75" y="271.5" ></text>
+</g>
+<g >
+<title>__x64_sys_openat (13,598,462 samples, 1.61%)</title><rect x="345.5" y="197" width="19.0" height="15.0" fill="rgb(251,215,51)" rx="2" ry="2" />
+<text  x="348.53" y="207.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (67,831,629 samples, 8.04%)</title><rect x="577.9" y="533" width="94.9" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="580.94" y="543.5" >_PyEval_Eva..</text>
+</g>
+<g >
+<title>dlopen@GLIBC_2.2.5 (25,773,953 samples, 3.06%)</title><rect x="401.6" y="453" width="36.0" height="15.0" fill="rgb(226,97,23)" rx="2" ry="2" />
+<text  x="404.59" y="463.5" >dlo..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,085,125 samples, 1.31%)</title><rect x="140.6" y="773" width="15.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="143.63" y="783.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,101,248 samples, 1.55%)</title><rect x="249.4" y="405" width="18.3" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="252.36" y="415.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,231,900 samples, 1.57%)</title><rect x="84.1" y="549" width="18.5" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="87.12" y="559.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (482,680,510 samples, 57.22%)</title><rect x="506.9" y="773" width="675.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="509.89" y="783.5" >[libpython3.13.so.1.0]</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,566,010 samples, 1.37%)</title><rect x="1057.0" y="437" width="16.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1060.04" y="447.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (13,762,235 samples, 1.63%)</title><rect x="156.1" y="709" width="19.3" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="159.13" y="719.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,762,235 samples, 1.63%)</title><rect x="156.1" y="469" width="19.3" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="159.13" y="479.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (14,154,169 samples, 1.68%)</title><rect x="102.6" y="229" width="19.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="105.63" y="239.5" ></text>
+</g>
+<g >
+<title>do_syscall_64 (13,598,462 samples, 1.61%)</title><rect x="345.5" y="213" width="19.0" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="348.53" y="223.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="149" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="159.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (14,154,169 samples, 1.68%)</title><rect x="102.6" y="597" width="19.8" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="105.63" y="607.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (54,754,388 samples, 6.49%)</title><rect x="596.2" y="453" width="76.6" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="599.23" y="463.5" >PyImport..</text>
+</g>
+<g >
+<title>_dl_lookup_symbol_x (255,184 samples, 0.03%)</title><rect x="1182.1" y="805" width="0.4" height="15.0" fill="rgb(211,28,6)" rx="2" ry="2" />
+<text  x="1185.12" y="815.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (10,519,939 samples, 1.25%)</title><rect x="468.4" y="581" width="14.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="471.35" y="591.5" ></text>
+</g>
+<g >
+<title>PyObject_Str (5,716,794 samples, 0.68%)</title><rect x="1000.3" y="373" width="8.0" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="1003.34" y="383.5" ></text>
+</g>
+<g >
+<title>syscall_exit_to_user_mode (9,798,827 samples, 1.16%)</title><rect x="1026.3" y="117" width="13.7" height="15.0" fill="rgb(251,211,50)" rx="2" ry="2" />
+<text  x="1029.28" y="127.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (11,085,125 samples, 1.31%)</title><rect x="140.6" y="613" width="15.5" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="143.63" y="623.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,085,125 samples, 1.31%)</title><rect x="140.6" y="453" width="15.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="143.63" y="463.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,598,462 samples, 1.61%)</title><rect x="345.5" y="533" width="19.0" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="348.53" y="543.5" ></text>
+</g>
+<g >
+<title>PyArg_ParseTuple (12,746,550 samples, 1.51%)</title><rect x="383.8" y="309" width="17.8" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="386.76" y="319.5" ></text>
+</g>
+<g >
+<title>dequeue_task_fair (20,148,794 samples, 2.39%)</title><rect x="902.2" y="421" width="28.2" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="905.20" y="431.5" >d..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,762,235 samples, 1.63%)</title><rect x="156.1" y="725" width="19.3" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="159.13" y="735.5" ></text>
+</g>
+<g >
+<title>common_interrupt (6,136,472 samples, 0.73%)</title><rect x="930.4" y="389" width="8.6" height="15.0" fill="rgb(215,46,11)" rx="2" ry="2" />
+<text  x="933.38" y="399.5" ></text>
+</g>
+<g >
+<title>main (13,156,656 samples, 1.56%)</title><rect x="10.0" y="837" width="18.4" height="15.0" fill="rgb(243,179,42)" rx="2" ry="2" />
+<text  x="13.00" y="847.5" ></text>
+</g>
+<g >
+<title>_dl_open (25,773,953 samples, 3.06%)</title><rect x="401.6" y="373" width="36.0" height="15.0" fill="rgb(238,156,37)" rx="2" ry="2" />
+<text  x="404.59" y="383.5" >_dl..</text>
+</g>
+<g >
+<title>_PyObject_GenericSetAttrWithDict (13,951,735 samples, 1.65%)</title><rect x="267.7" y="245" width="19.5" height="15.0" fill="rgb(228,110,26)" rx="2" ry="2" />
+<text  x="270.68" y="255.5" ></text>
+</g>
+<g >
+<title>get_unused_fd_flags (13,598,462 samples, 1.61%)</title><rect x="345.5" y="165" width="19.0" height="15.0" fill="rgb(245,186,44)" rx="2" ry="2" />
+<text  x="348.53" y="175.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (55,651,889 samples, 6.60%)</title><rect x="267.7" y="629" width="77.8" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="270.68" y="639.5" >_PyEval_..</text>
+</g>
+<g >
+<title>PyEval_EvalCode (13,231,900 samples, 1.57%)</title><rect x="84.1" y="757" width="18.5" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="87.12" y="767.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,010,491 samples, 1.54%)</title><rect x="122.4" y="661" width="18.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="125.43" y="671.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,738,833 samples, 1.63%)</title><rect x="364.5" y="277" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="367.55" y="287.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,570,826 samples, 1.37%)</title><rect x="984.2" y="357" width="16.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="987.15" y="367.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (39,796,389 samples, 4.72%)</title><rect x="175.4" y="757" width="55.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="178.38" y="767.5" >[libp..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,085,125 samples, 1.31%)</title><rect x="140.6" y="325" width="15.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="143.63" y="335.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (55,651,889 samples, 6.60%)</title><rect x="267.7" y="581" width="77.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="270.68" y="591.5" >[libpyth..</text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (55,651,889 samples, 6.60%)</title><rect x="267.7" y="485" width="77.8" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="270.68" y="495.5" >PyImport..</text>
+</g>
+<g >
+<title>PyObject_CallFunction (9,177,604 samples, 1.09%)</title><rect x="488.0" y="725" width="12.9" height="15.0" fill="rgb(213,40,9)" rx="2" ry="2" />
+<text  x="491.03" y="735.5" ></text>
+</g>
+<g >
+<title>_start (532,665,066 samples, 63.14%)</title><rect x="437.6" y="885" width="745.1" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="440.64" y="895.5" >_start</text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (9,177,604 samples, 1.09%)</title><rect x="488.0" y="661" width="12.9" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="491.03" y="671.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (3,550,791 samples, 0.42%)</title><rect x="483.1" y="709" width="4.9" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="486.07" y="719.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (10,519,939 samples, 1.25%)</title><rect x="468.4" y="565" width="14.7" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="471.35" y="575.5" ></text>
+</g>
+<g >
+<title>enqueue_hrtimer (5,694,721 samples, 0.68%)</title><rect x="861.0" y="437" width="8.0" height="15.0" fill="rgb(211,29,7)" rx="2" ry="2" />
+<text  x="864.04" y="447.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (10,519,939 samples, 1.25%)</title><rect x="468.4" y="613" width="14.7" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="471.35" y="623.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,101,248 samples, 1.55%)</title><rect x="249.4" y="677" width="18.3" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="252.36" y="687.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,101,248 samples, 1.55%)</title><rect x="249.4" y="469" width="18.3" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="252.36" y="479.5" ></text>
+</g>
+<g >
+<title>handle_edge_irq (6,136,472 samples, 0.73%)</title><rect x="930.4" y="357" width="8.6" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="933.38" y="367.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (14,154,169 samples, 1.68%)</title><rect x="102.6" y="309" width="19.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="105.63" y="319.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (12,928,985 samples, 1.53%)</title><rect x="194.2" y="309" width="18.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="197.23" y="319.5" ></text>
+</g>
+<g >
+<title>_dl_sysdep_start (26,509,205 samples, 3.14%)</title><rect x="28.4" y="853" width="37.1" height="15.0" fill="rgb(234,137,32)" rx="2" ry="2" />
+<text  x="31.40" y="863.5" >_dl..</text>
+</g>
+<g >
+<title>int pybind11::detail::argument_loader&lt;PerfEventArray*, int&gt;::call_impl&lt;int, pybind11::cpp_function::cpp_function&lt;int, PerfEventArray, int, pybind11::name, pybind11::is_method, pybind11::sibling, pybind11::arg&gt; (211,361,540 samples, 25.05%)</title><rect x="819.4" y="613" width="295.6" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="822.37" y="623.5" >int pybind11::detail::argument_loader&lt;P..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (23,934,747 samples, 2.84%)</title><rect x="454.6" y="757" width="33.4" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="457.55" y="767.5" >[l..</text>
+</g>
+<g >
+<title>PyEval_EvalCode (13,010,491 samples, 1.54%)</title><rect x="122.4" y="725" width="18.2" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="125.43" y="735.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,101,248 samples, 1.55%)</title><rect x="249.4" y="725" width="18.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="252.36" y="735.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (10,519,939 samples, 1.25%)</title><rect x="468.4" y="437" width="14.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="471.35" y="447.5" ></text>
+</g>
+<g >
+<title>decltype  (11,290,026 samples, 1.34%)</title><rect x="1073.2" y="197" width="15.8" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="1076.21" y="207.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,101,248 samples, 1.55%)</title><rect x="249.4" y="341" width="18.3" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="252.36" y="351.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (65,857,798 samples, 7.81%)</title><rect x="345.5" y="661" width="92.1" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="348.53" y="671.5" >PyObject_Ca..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (39,796,389 samples, 4.72%)</title><rect x="175.4" y="837" width="55.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="178.38" y="847.5" >[libp..</text>
+</g>
+<g >
+<title>PyDict_GetItemRef (10,732,072 samples, 1.27%)</title><rect x="544.4" y="709" width="15.0" height="15.0" fill="rgb(215,50,12)" rx="2" ry="2" />
+<text  x="547.42" y="719.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (14,154,169 samples, 1.68%)</title><rect x="102.6" y="581" width="19.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="105.63" y="591.5" ></text>
+</g>
+<g >
+<title>PyObject_Vectorcall (12,746,550 samples, 1.51%)</title><rect x="383.8" y="421" width="17.8" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="386.76" y="431.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,101,248 samples, 1.55%)</title><rect x="249.4" y="501" width="18.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="252.36" y="511.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="197" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="207.5" ></text>
+</g>
+<g >
+<title>[_posixsubprocess.cpython-313-x86_64-linux-gnu.so] (13,786,205 samples, 1.63%)</title><rect x="734.1" y="581" width="19.3" height="15.0" fill="rgb(218,61,14)" rx="2" ry="2" />
+<text  x="737.13" y="591.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (3,343,118 samples, 0.40%)</title><rect x="454.6" y="581" width="4.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="457.55" y="591.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (9,177,604 samples, 1.09%)</title><rect x="488.0" y="645" width="12.9" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="491.03" y="655.5" ></text>
+</g>
+<g >
+<title>folio_add_file_rmap_ptes (13,156,656 samples, 1.56%)</title><rect x="10.0" y="645" width="18.4" height="15.0" fill="rgb(225,92,22)" rx="2" ry="2" />
+<text  x="13.00" y="655.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (39,796,389 samples, 4.72%)</title><rect x="175.4" y="469" width="55.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="178.38" y="479.5" >[libp..</text>
+</g>
+<g >
+<title>epoll_wait (111,624,664 samples, 13.23%)</title><rect x="828.0" y="549" width="156.2" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="831.02" y="559.5" >epoll_wait</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,570,826 samples, 1.37%)</title><rect x="984.2" y="309" width="16.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="987.15" y="319.5" ></text>
+</g>
+<g >
+<title>pybind11::detail::get_global_type_info (11,290,026 samples, 1.34%)</title><rect x="1073.2" y="213" width="15.8" height="15.0" fill="rgb(240,165,39)" rx="2" ry="2" />
+<text  x="1076.21" y="223.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,085,125 samples, 1.31%)</title><rect x="140.6" y="837" width="15.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="143.63" y="847.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (9,177,604 samples, 1.09%)</title><rect x="488.0" y="677" width="12.9" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="491.03" y="687.5" ></text>
+</g>
+<g >
+<title>PyFile_OpenCodeObject (13,598,462 samples, 1.61%)</title><rect x="345.5" y="405" width="19.0" height="15.0" fill="rgb(206,5,1)" rx="2" ry="2" />
+<text  x="348.53" y="415.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (39,796,389 samples, 4.72%)</title><rect x="175.4" y="709" width="55.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="178.38" y="719.5" >[libp..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,010,491 samples, 1.54%)</title><rect x="122.4" y="629" width="18.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="125.43" y="639.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,101,248 samples, 1.55%)</title><rect x="249.4" y="757" width="18.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="252.36" y="767.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,598,462 samples, 1.61%)</title><rect x="345.5" y="261" width="19.0" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="348.53" y="271.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (55,651,889 samples, 6.60%)</title><rect x="267.7" y="789" width="77.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="270.68" y="799.5" >[libpyth..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (65,857,798 samples, 7.81%)</title><rect x="345.5" y="869" width="92.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="348.53" y="879.5" >[libpython3..</text>
+</g>
+<g >
+<title>get_page_from_freelist (13,892,765 samples, 1.65%)</title><rect x="306.7" y="69" width="19.5" height="15.0" fill="rgb(252,218,52)" rx="2" ry="2" />
+<text  x="309.75" y="79.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (14,154,169 samples, 1.68%)</title><rect x="102.6" y="661" width="19.8" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="105.63" y="671.5" ></text>
+</g>
+<g >
+<title>__GI___fstatat64 (12,088,554 samples, 1.43%)</title><rect x="437.6" y="533" width="17.0" height="15.0" fill="rgb(227,101,24)" rx="2" ry="2" />
+<text  x="440.64" y="543.5" ></text>
+</g>
+<g >
+<title>PyObject_GetAttrString (11,570,826 samples, 1.37%)</title><rect x="984.2" y="389" width="16.1" height="15.0" fill="rgb(240,162,38)" rx="2" ry="2" />
+<text  x="987.15" y="399.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (14,154,169 samples, 1.68%)</title><rect x="102.6" y="469" width="19.8" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="105.63" y="479.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (13,231,900 samples, 1.57%)</title><rect x="84.1" y="709" width="18.5" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="87.12" y="719.5" ></text>
+</g>
+<g >
+<title>common_interrupt (5,472,278 samples, 0.65%)</title><rect x="1107.4" y="501" width="7.6" height="15.0" fill="rgb(215,46,11)" rx="2" ry="2" />
+<text  x="1110.36" y="511.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,231,900 samples, 1.57%)</title><rect x="84.1" y="485" width="18.5" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="87.12" y="495.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (34,819,369 samples, 4.13%)</title><rect x="1008.3" y="277" width="48.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1011.33" y="287.5" >[lib..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (10,519,939 samples, 1.25%)</title><rect x="468.4" y="485" width="14.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="471.35" y="495.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,101,248 samples, 1.55%)</title><rect x="249.4" y="613" width="18.3" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="252.36" y="623.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (11,085,125 samples, 1.31%)</title><rect x="140.6" y="421" width="15.5" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="143.63" y="431.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (27,725,521 samples, 3.29%)</title><rect x="306.7" y="325" width="38.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="309.75" y="335.5" >[li..</text>
+</g>
+<g >
+<title>dequeue_entities (20,148,794 samples, 2.39%)</title><rect x="902.2" y="405" width="28.2" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="905.20" y="415.5" >d..</text>
+</g>
+<g >
+<title>ktime_get_ts64 (8,265,703 samples, 0.98%)</title><rect x="939.0" y="485" width="11.5" height="15.0" fill="rgb(216,53,12)" rx="2" ry="2" />
+<text  x="941.97" y="495.5" ></text>
+</g>
+<g >
+<title>__irqentry_text_start (13,156,656 samples, 1.56%)</title><rect x="10.0" y="597" width="18.4" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="13.00" y="607.5" ></text>
+</g>
+<g >
+<title>LLVMInitializeWebAssemblyTarget (13,156,656 samples, 1.56%)</title><rect x="10.0" y="821" width="18.4" height="15.0" fill="rgb(252,218,52)" rx="2" ry="2" />
+<text  x="13.00" y="831.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (12,928,985 samples, 1.53%)</title><rect x="194.2" y="261" width="18.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="197.23" y="271.5" ></text>
+</g>
+<g >
+<title>PerfEventArray::poll (211,361,540 samples, 25.05%)</title><rect x="819.4" y="581" width="295.6" height="15.0" fill="rgb(242,171,41)" rx="2" ry="2" />
+<text  x="822.37" y="591.5" >PerfEventArray::poll</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,951,735 samples, 1.65%)</title><rect x="267.7" y="293" width="19.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="270.68" y="303.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,892,765 samples, 1.65%)</title><rect x="306.7" y="245" width="19.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="309.75" y="255.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (39,796,389 samples, 4.72%)</title><rect x="175.4" y="517" width="55.6" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="178.38" y="527.5" >PyObj..</text>
+</g>
+<g >
+<title>_dl_catch_exception (25,773,953 samples, 3.06%)</title><rect x="401.6" y="405" width="36.0" height="15.0" fill="rgb(253,223,53)" rx="2" ry="2" />
+<text  x="404.59" y="415.5" >_dl..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (65,857,798 samples, 7.81%)</title><rect x="345.5" y="853" width="92.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="348.53" y="863.5" >[libpython3..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (482,680,510 samples, 57.22%)</title><rect x="506.9" y="725" width="675.1" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="509.89" y="735.5" >_PyEval_EvalFrameDefault</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,302,363 samples, 1.58%)</title><rect x="1163.4" y="693" width="18.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1166.43" y="703.5" ></text>
+</g>
+<g >
+<title>do_syscall_64 (12,088,554 samples, 1.43%)</title><rect x="437.6" y="501" width="17.0" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="440.64" y="511.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (81,062,412 samples, 9.61%)</title><rect x="559.4" y="693" width="113.4" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="562.43" y="703.5" >PyObject_CallM..</text>
+</g>
+<g >
+<title>common_interrupt (4,914,771 samples, 0.58%)</title><rect x="772.5" y="661" width="6.9" height="15.0" fill="rgb(215,46,11)" rx="2" ry="2" />
+<text  x="775.51" y="671.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,649,007 samples, 1.62%)</title><rect x="753.4" y="661" width="19.1" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="756.41" y="671.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (39,796,389 samples, 4.72%)</title><rect x="175.4" y="501" width="55.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="178.38" y="511.5" >[libp..</text>
+</g>
+<g >
+<title>PyEval_EvalCode (13,738,833 samples, 1.63%)</title><rect x="364.5" y="325" width="19.3" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="367.55" y="335.5" ></text>
+</g>
+<g >
+<title>_PyType_LookupRef (12,928,985 samples, 1.53%)</title><rect x="194.2" y="197" width="18.1" height="15.0" fill="rgb(250,210,50)" rx="2" ry="2" />
+<text  x="197.23" y="207.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (13,762,235 samples, 1.63%)</title><rect x="156.1" y="613" width="19.3" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="159.13" y="623.5" ></text>
+</g>
+<g >
+<title>pybind11::detail::accessor&lt;pybind11::detail::accessor_policies::str_attr&gt;::get_cache (11,570,826 samples, 1.37%)</title><rect x="984.2" y="437" width="16.1" height="15.0" fill="rgb(213,38,9)" rx="2" ry="2" />
+<text  x="987.15" y="447.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (52,259,336 samples, 6.19%)</title><rect x="364.5" y="485" width="73.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="367.55" y="495.5" >[libpyth..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (11,085,125 samples, 1.31%)</title><rect x="140.6" y="309" width="15.5" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="143.63" y="319.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (9,177,604 samples, 1.09%)</title><rect x="488.0" y="501" width="12.9" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="491.03" y="511.5" ></text>
+</g>
+<g >
+<title>epoll_wait (5,215,538 samples, 0.62%)</title><rect x="1182.7" y="885" width="7.3" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="1185.70" y="895.5" ></text>
+</g>
+<g >
+<title>handle_edge_irq (5,472,278 samples, 0.65%)</title><rect x="1107.4" y="469" width="7.6" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="1110.36" y="479.5" ></text>
+</g>
+<g >
+<title>llvm::FPPassManager::runOnFunction (13,328,113 samples, 1.58%)</title><rect x="65.5" y="821" width="18.6" height="15.0" fill="rgb(252,217,52)" rx="2" ry="2" />
+<text  x="68.48" y="831.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (81,062,412 samples, 9.61%)</title><rect x="559.4" y="677" width="113.4" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="562.43" y="687.5" >[libpython3.13..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (54,754,388 samples, 6.49%)</title><rect x="596.2" y="405" width="76.6" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="599.23" y="415.5" >_PyEval_..</text>
+</g>
+<g >
+<title>asm_exc_page_fault (13,156,656 samples, 1.56%)</title><rect x="10.0" y="773" width="18.4" height="15.0" fill="rgb(225,93,22)" rx="2" ry="2" />
+<text  x="13.00" y="783.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (9,177,604 samples, 1.09%)</title><rect x="488.0" y="709" width="12.9" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="491.03" y="719.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,475,339 samples, 1.60%)</title><rect x="175.4" y="309" width="18.8" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="178.38" y="319.5" ></text>
+</g>
+<g >
+<title>x64_sys_call (18,811,986 samples, 2.23%)</title><rect x="957.8" y="501" width="26.4" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="960.84" y="511.5" >x..</text>
+</g>
+<g >
+<title>PyImport_Import (12,088,554 samples, 1.43%)</title><rect x="437.6" y="741" width="17.0" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="440.64" y="751.5" ></text>
+</g>
+<g >
+<title>_PyThreadState_PopFrame (6,337,622 samples, 0.75%)</title><rect x="1154.6" y="709" width="8.8" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="1157.57" y="719.5" ></text>
+</g>
+<g >
+<title>PyObject_Vectorcall (12,928,985 samples, 1.53%)</title><rect x="194.2" y="341" width="18.1" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="197.23" y="351.5" ></text>
+</g>
+<g >
+<title>do_epoll_wait (71,451,180 samples, 8.47%)</title><rect x="839.0" y="485" width="100.0" height="15.0" fill="rgb(211,31,7)" rx="2" ry="2" />
+<text  x="842.02" y="495.5" >do_epoll_wait</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,010,491 samples, 1.54%)</title><rect x="122.4" y="485" width="18.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="125.43" y="495.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (14,154,169 samples, 1.68%)</title><rect x="102.6" y="837" width="19.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="105.63" y="847.5" ></text>
+</g>
+<g >
+<title>rb_insert_color (5,694,721 samples, 0.68%)</title><rect x="861.0" y="405" width="8.0" height="15.0" fill="rgb(238,156,37)" rx="2" ry="2" />
+<text  x="864.04" y="415.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (13,010,491 samples, 1.54%)</title><rect x="122.4" y="549" width="18.2" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="125.43" y="559.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (14,154,169 samples, 1.68%)</title><rect x="102.6" y="853" width="19.8" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="105.63" y="863.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,085,125 samples, 1.31%)</title><rect x="140.6" y="677" width="15.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="143.63" y="687.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,762,235 samples, 1.63%)</title><rect x="156.1" y="661" width="19.3" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="159.13" y="671.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (45,200,905 samples, 5.36%)</title><rect x="437.6" y="805" width="63.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="440.64" y="815.5" >[libpy..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (45,200,905 samples, 5.36%)</title><rect x="437.6" y="821" width="63.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="440.64" y="831.5" >[libpy..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,649,007 samples, 1.62%)</title><rect x="753.4" y="597" width="19.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="756.41" y="607.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,010,491 samples, 1.54%)</title><rect x="122.4" y="837" width="18.2" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="125.43" y="847.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,231,900 samples, 1.57%)</title><rect x="84.1" y="357" width="18.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="87.12" y="367.5" ></text>
+</g>
+<g >
+<title>_dl_catch_exception (25,773,953 samples, 3.06%)</title><rect x="401.6" y="325" width="36.0" height="15.0" fill="rgb(253,223,53)" rx="2" ry="2" />
+<text  x="404.59" y="335.5" >_dl..</text>
+</g>
+<g >
+<title>_ZNSt5tupleIJN8pybind116detail11type_casterI6BpfMapvEEEEC4EvQfraa26is_default_constructible_vIT_E (11,290,026 samples, 1.34%)</title><rect x="1073.2" y="341" width="15.8" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="1076.21" y="351.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,832,756 samples, 1.64%)</title><rect x="326.2" y="277" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="329.18" y="287.5" ></text>
+</g>
+<g >
+<title>PyObject_GetOptionalAttr (12,928,985 samples, 1.53%)</title><rect x="194.2" y="229" width="18.1" height="15.0" fill="rgb(253,221,52)" rx="2" ry="2" />
+<text  x="197.23" y="239.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (3,343,118 samples, 0.40%)</title><rect x="454.6" y="629" width="4.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="457.55" y="639.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (13,010,491 samples, 1.54%)</title><rect x="122.4" y="469" width="18.2" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="125.43" y="479.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (13,101,248 samples, 1.55%)</title><rect x="249.4" y="581" width="18.3" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="252.36" y="591.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (12,746,550 samples, 1.51%)</title><rect x="383.8" y="389" width="17.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="386.76" y="399.5" ></text>
+</g>
+<g >
+<title>__napi_poll (4,914,771 samples, 0.58%)</title><rect x="772.5" y="597" width="6.9" height="15.0" fill="rgb(247,195,46)" rx="2" ry="2" />
+<text  x="775.51" y="607.5" ></text>
+</g>
+<g >
+<title>copy_process (13,786,205 samples, 1.63%)</title><rect x="734.1" y="453" width="19.3" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="737.13" y="463.5" ></text>
+</g>
+<g >
+<title>PyObject_CallFinalizer (11,566,010 samples, 1.37%)</title><rect x="1057.0" y="405" width="16.2" height="15.0" fill="rgb(206,7,1)" rx="2" ry="2" />
+<text  x="1060.04" y="415.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (14,154,169 samples, 1.68%)</title><rect x="102.6" y="389" width="19.8" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="105.63" y="399.5" ></text>
+</g>
+<g >
+<title>_PyObject_GetMethod (4,743,953 samples, 0.56%)</title><rect x="779.4" y="709" width="6.6" height="15.0" fill="rgb(223,86,20)" rx="2" ry="2" />
+<text  x="782.38" y="719.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;std::type_index, std::pair&lt;std::type_index const, pybind11::detail::type_info*&gt;, std::allocator&lt;std::pair&lt;std::type_index const, pybind11::detail::type_info*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;std::type_index&gt;, std::hash&lt;std::type_index&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, true&gt; &gt;::find (11,290,026 samples, 1.34%)</title><rect x="1073.2" y="149" width="15.8" height="15.0" fill="rgb(249,202,48)" rx="2" ry="2" />
+<text  x="1076.21" y="159.5" ></text>
+</g>
+<g >
+<title>PyDict_New (13,951,735 samples, 1.65%)</title><rect x="267.7" y="229" width="19.5" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="270.68" y="239.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="677" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="687.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (12,088,554 samples, 1.43%)</title><rect x="437.6" y="597" width="17.0" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="440.64" y="607.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (14,154,169 samples, 1.68%)</title><rect x="102.6" y="437" width="19.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="105.63" y="447.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (14,426,109 samples, 1.71%)</title><rect x="634.0" y="245" width="20.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="636.96" y="255.5" ></text>
+</g>
+<g >
+<title>pybind11::cpp_function::initialize&lt;pybind11::cpp_function::initialize&lt;int, PerfEventArray, int, pybind11::name, pybind11::is_method, pybind11::sibling, pybind11::arg&gt; (217,445,563 samples, 25.78%)</title><rect x="810.9" y="645" width="304.1" height="15.0" fill="rgb(227,103,24)" rx="2" ry="2" />
+<text  x="813.86" y="655.5" >pybind11::cpp_function::initialize&lt;pybin..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,353,427 samples, 1.58%)</title><rect x="654.1" y="277" width="18.7" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="657.14" y="287.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (39,796,389 samples, 4.72%)</title><rect x="175.4" y="485" width="55.6" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="178.38" y="495.5" >_PyEv..</text>
+</g>
+<g >
+<title>_PyType_LookupRef (11,570,826 samples, 1.37%)</title><rect x="984.2" y="341" width="16.1" height="15.0" fill="rgb(250,210,50)" rx="2" ry="2" />
+<text  x="987.15" y="351.5" ></text>
+</g>
+<g >
+<title>exc_page_fault (3,343,118 samples, 0.40%)</title><rect x="454.6" y="469" width="4.6" height="15.0" fill="rgb(212,35,8)" rx="2" ry="2" />
+<text  x="457.55" y="479.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (39,796,389 samples, 4.72%)</title><rect x="175.4" y="821" width="55.6" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="178.38" y="831.5" >PyEva..</text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (13,231,900 samples, 1.57%)</title><rect x="84.1" y="853" width="18.5" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="87.12" y="863.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (39,796,389 samples, 4.72%)</title><rect x="175.4" y="805" width="55.6" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="178.38" y="815.5" >_PyEv..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (55,651,889 samples, 6.60%)</title><rect x="267.7" y="437" width="77.8" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="270.68" y="447.5" >_PyEval_..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (65,857,798 samples, 7.81%)</title><rect x="345.5" y="613" width="92.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="348.53" y="623.5" >[libpython3..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,738,833 samples, 1.63%)</title><rect x="364.5" y="261" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="367.55" y="271.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (34,819,369 samples, 4.13%)</title><rect x="1008.3" y="245" width="48.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1011.33" y="255.5" >[lib..</text>
+</g>
+<g >
+<title>PyMapping_GetOptionalItem (4,491,760 samples, 0.53%)</title><rect x="672.8" y="709" width="6.3" height="15.0" fill="rgb(224,91,21)" rx="2" ry="2" />
+<text  x="675.82" y="719.5" ></text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (34,819,369 samples, 4.13%)</title><rect x="1008.3" y="149" width="48.7" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="1011.33" y="159.5" >entr..</text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (13,101,248 samples, 1.55%)</title><rect x="249.4" y="453" width="18.3" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="252.36" y="463.5" ></text>
+</g>
+<g >
+<title>security_inode_getattr (12,088,554 samples, 1.43%)</title><rect x="437.6" y="421" width="17.0" height="15.0" fill="rgb(216,53,12)" rx="2" ry="2" />
+<text  x="440.64" y="431.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (13,101,248 samples, 1.55%)</title><rect x="249.4" y="693" width="18.3" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="252.36" y="703.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,085,125 samples, 1.31%)</title><rect x="140.6" y="853" width="15.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="143.63" y="863.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (13,762,235 samples, 1.63%)</title><rect x="156.1" y="565" width="19.3" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="159.13" y="575.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (52,259,336 samples, 6.19%)</title><rect x="364.5" y="549" width="73.1" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="367.55" y="559.5" >PyImport..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,738,833 samples, 1.63%)</title><rect x="364.5" y="357" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="367.55" y="367.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (14,154,169 samples, 1.68%)</title><rect x="102.6" y="405" width="19.8" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="105.63" y="415.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (14,154,169 samples, 1.68%)</title><rect x="102.6" y="709" width="19.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="105.63" y="719.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,951,735 samples, 1.65%)</title><rect x="267.7" y="373" width="19.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="270.68" y="383.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,231,900 samples, 1.57%)</title><rect x="84.1" y="325" width="18.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="87.12" y="335.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,353,427 samples, 1.58%)</title><rect x="654.1" y="389" width="18.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="657.14" y="399.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (14,154,169 samples, 1.68%)</title><rect x="102.6" y="533" width="19.8" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="105.63" y="543.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,101,248 samples, 1.55%)</title><rect x="249.4" y="549" width="18.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="252.36" y="559.5" ></text>
+</g>
+<g >
+<title>copy_mc_enhanced_fast_string (13,462,351 samples, 1.60%)</title><rect x="46.7" y="709" width="18.8" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="49.65" y="719.5" ></text>
+</g>
+<g >
+<title>std::vector&lt;pybind11::handle, std::allocator&lt;pybind11::handle&gt; &gt;::reserve (8,979,352 samples, 1.06%)</title><rect x="1115.0" y="645" width="12.6" height="15.0" fill="rgb(243,177,42)" rx="2" ry="2" />
+<text  x="1118.01" y="655.5" ></text>
+</g>
+<g >
+<title>PyThread_tss_get (6,939,269 samples, 0.82%)</title><rect x="1136.9" y="629" width="9.7" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="1139.90" y="639.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,475,339 samples, 1.60%)</title><rect x="175.4" y="277" width="18.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="178.38" y="287.5" ></text>
+</g>
+<g >
+<title>operator delete (6,668,434 samples, 0.79%)</title><rect x="1127.6" y="549" width="9.3" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="1130.57" y="559.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,762,235 samples, 1.63%)</title><rect x="156.1" y="789" width="19.3" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="159.13" y="799.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (39,796,389 samples, 4.72%)</title><rect x="175.4" y="453" width="55.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="178.38" y="463.5" >[libp..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (9,177,604 samples, 1.09%)</title><rect x="488.0" y="517" width="12.9" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="491.03" y="527.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (13,231,900 samples, 1.57%)</title><rect x="84.1" y="885" width="18.5" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="87.12" y="895.5" ></text>
+</g>
+<g >
+<title>timerqueue_add (5,694,721 samples, 0.68%)</title><rect x="861.0" y="421" width="8.0" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="864.04" y="431.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="181" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="191.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (39,796,389 samples, 4.72%)</title><rect x="175.4" y="389" width="55.6" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="178.38" y="399.5" >PyObj..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (27,774,461 samples, 3.29%)</title><rect x="615.3" y="373" width="38.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="618.29" y="383.5" >[li..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (10,519,939 samples, 1.25%)</title><rect x="468.4" y="709" width="14.7" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="471.35" y="719.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (13,010,491 samples, 1.54%)</title><rect x="122.4" y="853" width="18.2" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="125.43" y="863.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,231,900 samples, 1.57%)</title><rect x="84.1" y="421" width="18.5" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="87.12" y="431.5" ></text>
+</g>
+<g >
+<title>PyDict_GetItemRef (13,649,007 samples, 1.62%)</title><rect x="753.4" y="613" width="19.1" height="15.0" fill="rgb(215,50,12)" rx="2" ry="2" />
+<text  x="756.41" y="623.5" ></text>
+</g>
+<g >
+<title>_dl_catch_error (25,773,953 samples, 3.06%)</title><rect x="401.6" y="421" width="36.0" height="15.0" fill="rgb(223,83,20)" rx="2" ry="2" />
+<text  x="404.59" y="431.5" >_dl..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,010,491 samples, 1.54%)</title><rect x="122.4" y="645" width="18.2" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="125.43" y="655.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (12,928,985 samples, 1.53%)</title><rect x="194.2" y="325" width="18.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="197.23" y="335.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,085,125 samples, 1.31%)</title><rect x="140.6" y="565" width="15.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="143.63" y="575.5" ></text>
+</g>
+<g >
+<title>asm_common_interrupt (4,914,771 samples, 0.58%)</title><rect x="772.5" y="677" width="6.9" height="15.0" fill="rgb(227,105,25)" rx="2" ry="2" />
+<text  x="775.51" y="687.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,231,900 samples, 1.57%)</title><rect x="84.1" y="373" width="18.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="87.12" y="383.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,085,125 samples, 1.31%)</title><rect x="140.6" y="277" width="15.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="143.63" y="287.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (34,819,369 samples, 4.13%)</title><rect x="1008.3" y="293" width="48.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1011.33" y="303.5" >[lib..</text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (67,831,629 samples, 8.04%)</title><rect x="577.9" y="581" width="94.9" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="580.94" y="591.5" >PyImport_Im..</text>
+</g>
+<g >
+<title>python3 (790,622,383 samples, 93.72%)</title><rect x="84.1" y="901" width="1105.9" height="15.0" fill="rgb(230,115,27)" rx="2" ry="2" />
+<text  x="87.12" y="911.5" >python3</text>
+</g>
+<g >
+<title>[libLLVM.so.22.1] (13,156,656 samples, 1.56%)</title><rect x="10.0" y="789" width="18.4" height="15.0" fill="rgb(217,55,13)" rx="2" ry="2" />
+<text  x="13.00" y="799.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (11,085,125 samples, 1.31%)</title><rect x="140.6" y="389" width="15.5" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="143.63" y="399.5" ></text>
+</g>
+<g >
+<title>pybind11::detail::simple_collector&lt; (63,392,199 samples, 7.51%)</title><rect x="1000.3" y="469" width="88.7" height="15.0" fill="rgb(211,29,7)" rx="2" ry="2" />
+<text  x="1003.34" y="479.5" >pybind11::..</text>
+</g>
+<g >
+<title>PyObject_CallFunction (13,951,735 samples, 1.65%)</title><rect x="267.7" y="341" width="19.5" height="15.0" fill="rgb(213,40,9)" rx="2" ry="2" />
+<text  x="270.68" y="351.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="357" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="367.5" ></text>
+</g>
+<g >
+<title>std::_Bvector_base&lt;std::allocator&lt;bool&gt; &gt;::_M_deallocate (6,668,434 samples, 0.79%)</title><rect x="1127.6" y="613" width="9.3" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="1130.57" y="623.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,010,491 samples, 1.54%)</title><rect x="122.4" y="581" width="18.2" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="125.43" y="591.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (14,154,169 samples, 1.68%)</title><rect x="102.6" y="501" width="19.8" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="105.63" y="511.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,101,248 samples, 1.55%)</title><rect x="249.4" y="373" width="18.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="252.36" y="383.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,249,826 samples, 1.33%)</title><rect x="1099.3" y="533" width="15.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1102.27" y="543.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (6,520,899 samples, 0.77%)</title><rect x="459.2" y="693" width="9.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="462.23" y="703.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (482,680,510 samples, 57.22%)</title><rect x="506.9" y="741" width="675.1" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="509.89" y="751.5" >PyEval_EvalCode</text>
+</g>
+<g >
+<title>apic_ack_edge (6,136,472 samples, 0.73%)</title><rect x="930.4" y="341" width="8.6" height="15.0" fill="rgb(244,182,43)" rx="2" ry="2" />
+<text  x="933.38" y="351.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (68,753,137 samples, 8.15%)</title><rect x="249.4" y="837" width="96.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="252.36" y="847.5" >[libpython3..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (55,651,889 samples, 6.60%)</title><rect x="267.7" y="549" width="77.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="270.68" y="559.5" >[libpyth..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="245" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="255.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (55,651,889 samples, 6.60%)</title><rect x="267.7" y="597" width="77.8" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="270.68" y="607.5" >PyObject..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (11,085,125 samples, 1.31%)</title><rect x="140.6" y="645" width="15.5" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="143.63" y="655.5" ></text>
+</g>
+<g >
+<title>_Py_write (34,819,369 samples, 4.13%)</title><rect x="1008.3" y="181" width="48.7" height="15.0" fill="rgb(252,218,52)" rx="2" ry="2" />
+<text  x="1011.33" y="191.5" >_Py_..</text>
+</g>
+<g >
+<title>do_user_addr_fault (13,156,656 samples, 1.56%)</title><rect x="10.0" y="741" width="18.4" height="15.0" fill="rgb(228,108,25)" rx="2" ry="2" />
+<text  x="13.00" y="751.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (9,177,604 samples, 1.09%)</title><rect x="488.0" y="453" width="12.9" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="491.03" y="463.5" ></text>
+</g>
+<g >
+<title>PyImport_Import (9,177,604 samples, 1.09%)</title><rect x="488.0" y="741" width="12.9" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="491.03" y="751.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,010,491 samples, 1.54%)</title><rect x="122.4" y="389" width="18.2" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="125.43" y="399.5" ></text>
+</g>
+<g >
+<title>main (13,328,113 samples, 1.58%)</title><rect x="65.5" y="885" width="18.6" height="15.0" fill="rgb(243,179,42)" rx="2" ry="2" />
+<text  x="68.48" y="895.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,951,735 samples, 1.65%)</title><rect x="267.7" y="325" width="19.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="270.68" y="335.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,598,462 samples, 1.61%)</title><rect x="345.5" y="309" width="19.0" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="348.53" y="319.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (13,101,248 samples, 1.55%)</title><rect x="249.4" y="437" width="18.3" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="252.36" y="447.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (10,519,939 samples, 1.25%)</title><rect x="468.4" y="517" width="14.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="471.35" y="527.5" ></text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (13,598,462 samples, 1.61%)</title><rect x="345.5" y="229" width="19.0" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="348.53" y="239.5" ></text>
+</g>
+<g >
+<title>_Py_HandlePending (13,302,363 samples, 1.58%)</title><rect x="1163.4" y="709" width="18.6" height="15.0" fill="rgb(209,19,4)" rx="2" ry="2" />
+<text  x="1166.43" y="719.5" ></text>
+</g>
+<g >
+<title>llvm::SelectionDAGISel::SelectCodeCommon (13,328,113 samples, 1.58%)</title><rect x="65.5" y="709" width="18.6" height="15.0" fill="rgb(232,125,29)" rx="2" ry="2" />
+<text  x="68.48" y="719.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,543,810 samples, 1.61%)</title><rect x="791.9" y="677" width="19.0" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="794.92" y="687.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (39,796,389 samples, 4.72%)</title><rect x="175.4" y="741" width="55.6" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="178.38" y="751.5" >_PyEv..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (68,753,137 samples, 8.15%)</title><rect x="249.4" y="805" width="96.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="252.36" y="815.5" >[libpython3..</text>
+</g>
+<g >
+<title>_PyObject_LookupSpecial (13,974,633 samples, 1.66%)</title><rect x="287.2" y="293" width="19.5" height="15.0" fill="rgb(218,61,14)" rx="2" ry="2" />
+<text  x="290.20" y="303.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (53,558,624 samples, 6.35%)</title><rect x="156.1" y="853" width="74.9" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="863.5" >[libpyth..</text>
+</g>
+<g >
+<title>filemap_map_pages (13,156,656 samples, 1.56%)</title><rect x="10.0" y="677" width="18.4" height="15.0" fill="rgb(229,112,27)" rx="2" ry="2" />
+<text  x="13.00" y="687.5" ></text>
+</g>
+<g >
+<title>asm_common_interrupt (5,472,278 samples, 0.65%)</title><rect x="1107.4" y="517" width="7.6" height="15.0" fill="rgb(227,105,25)" rx="2" ry="2" />
+<text  x="1110.36" y="527.5" ></text>
+</g>
+<g >
+<title>handle_mm_fault (3,343,118 samples, 0.40%)</title><rect x="454.6" y="437" width="4.6" height="15.0" fill="rgb(234,135,32)" rx="2" ry="2" />
+<text  x="457.55" y="447.5" ></text>
+</g>
+<g >
+<title>x86_pmu_disable_all (5,716,794 samples, 0.68%)</title><rect x="894.2" y="373" width="8.0" height="15.0" fill="rgb(254,227,54)" rx="2" ry="2" />
+<text  x="897.20" y="383.5" ></text>
+</g>
+<g >
+<title>PyObject_CallFunction (12,088,554 samples, 1.43%)</title><rect x="437.6" y="725" width="17.0" height="15.0" fill="rgb(213,40,9)" rx="2" ry="2" />
+<text  x="440.64" y="735.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (55,651,889 samples, 6.60%)</title><rect x="267.7" y="453" width="77.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="270.68" y="463.5" >[libpyth..</text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (13,101,248 samples, 1.55%)</title><rect x="249.4" y="789" width="18.3" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="252.36" y="799.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,832,756 samples, 1.64%)</title><rect x="326.2" y="261" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="329.18" y="271.5" ></text>
+</g>
+<g >
+<title>_start (39,665,861 samples, 4.70%)</title><rect x="10.0" y="885" width="55.5" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="13.00" y="895.5" >_start</text>
+</g>
+<g >
+<title>pybind11::detail::type_caster&lt;int, void&gt;::load (6,084,023 samples, 0.72%)</title><rect x="810.9" y="581" width="8.5" height="15.0" fill="rgb(232,128,30)" rx="2" ry="2" />
+<text  x="813.86" y="591.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (67,831,629 samples, 8.04%)</title><rect x="577.9" y="485" width="94.9" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="580.94" y="495.5" >PyEval_Eval..</text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (13,598,462 samples, 1.61%)</title><rect x="345.5" y="469" width="19.0" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="348.53" y="479.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="261" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="271.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (13,101,248 samples, 1.55%)</title><rect x="249.4" y="357" width="18.3" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="252.36" y="367.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (9,177,604 samples, 1.09%)</title><rect x="488.0" y="469" width="12.9" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="491.03" y="479.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,786,205 samples, 1.63%)</title><rect x="734.1" y="629" width="19.3" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="737.13" y="639.5" ></text>
+</g>
+<g >
+<title>finish_task_switch.isra.0 (6,136,472 samples, 0.73%)</title><rect x="930.4" y="421" width="8.6" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="933.38" y="431.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,353,427 samples, 1.58%)</title><rect x="654.1" y="293" width="18.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="657.14" y="303.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (39,796,389 samples, 4.72%)</title><rect x="175.4" y="773" width="55.6" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="178.38" y="783.5" >PyObj..</text>
+</g>
+<g >
+<title>asm_common_interrupt (6,136,472 samples, 0.73%)</title><rect x="930.4" y="405" width="8.6" height="15.0" fill="rgb(227,105,25)" rx="2" ry="2" />
+<text  x="933.38" y="415.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (13,738,833 samples, 1.63%)</title><rect x="364.5" y="405" width="19.3" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="367.55" y="415.5" ></text>
+</g>
+<g >
+<title>__x64_sys_epoll_wait (79,716,883 samples, 9.45%)</title><rect x="839.0" y="501" width="111.5" height="15.0" fill="rgb(206,6,1)" rx="2" ry="2" />
+<text  x="842.02" y="511.5" >__x64_sys_epo..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (52,259,336 samples, 6.19%)</title><rect x="364.5" y="597" width="73.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="367.55" y="607.5" >[libpyth..</text>
+</g>
+<g >
+<title>llc (52,993,974 samples, 6.28%)</title><rect x="10.0" y="901" width="74.1" height="15.0" fill="rgb(228,108,26)" rx="2" ry="2" />
+<text  x="13.00" y="911.5" >llc</text>
+</g>
+<g >
+<title>rw_verify_area (12,827,129 samples, 1.52%)</title><rect x="1008.3" y="85" width="18.0" height="15.0" fill="rgb(218,64,15)" rx="2" ry="2" />
+<text  x="1011.33" y="95.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (65,857,798 samples, 7.81%)</title><rect x="345.5" y="629" width="92.1" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="348.53" y="639.5" >_PyEval_Eva..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (40,536,163 samples, 4.81%)</title><rect x="1000.3" y="405" width="56.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1003.34" y="415.5" >[libpy..</text>
+</g>
+<g >
+<title>clear_page_erms (13,892,765 samples, 1.65%)</title><rect x="306.7" y="37" width="19.5" height="15.0" fill="rgb(229,113,27)" rx="2" ry="2" />
+<text  x="309.75" y="47.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (13,738,833 samples, 1.63%)</title><rect x="364.5" y="421" width="19.3" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="367.55" y="431.5" ></text>
+</g>
+<g >
+<title>__perf_event_task_sched_out (14,704,884 samples, 1.74%)</title><rect x="881.6" y="421" width="20.6" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="884.63" y="431.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="325" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="335.5" ></text>
+</g>
+<g >
+<title>__tls_get_addr (13,231,900 samples, 1.57%)</title><rect x="84.1" y="309" width="18.5" height="15.0" fill="rgb(246,191,45)" rx="2" ry="2" />
+<text  x="87.12" y="319.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (9,177,604 samples, 1.09%)</title><rect x="488.0" y="485" width="12.9" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="491.03" y="495.5" ></text>
+</g>
+<g >
+<title>_PyObject_MakeTpCall (263,487,942 samples, 31.23%)</title><rect x="786.0" y="709" width="368.6" height="15.0" fill="rgb(229,113,27)" rx="2" ry="2" />
+<text  x="789.02" y="719.5" >_PyObject_MakeTpCall</text>
+</g>
+<g >
+<title>PyEval_EvalCode (55,651,889 samples, 6.60%)</title><rect x="267.7" y="773" width="77.8" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="270.68" y="783.5" >PyEval_E..</text>
+</g>
+<g >
+<title>_dl_start (26,509,205 samples, 3.14%)</title><rect x="28.4" y="869" width="37.1" height="15.0" fill="rgb(237,151,36)" rx="2" ry="2" />
+<text  x="31.40" y="879.5" >_dl..</text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (13,101,248 samples, 1.55%)</title><rect x="249.4" y="773" width="18.3" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="252.36" y="783.5" ></text>
+</g>
+<g >
+<title>syscall_trace_enter (12,193,413 samples, 1.45%)</title><rect x="1040.0" y="117" width="17.0" height="15.0" fill="rgb(251,214,51)" rx="2" ry="2" />
+<text  x="1042.98" y="127.5" ></text>
+</g>
+<g >
+<title>dl_open_worker (25,773,953 samples, 3.06%)</title><rect x="401.6" y="341" width="36.0" height="15.0" fill="rgb(236,145,34)" rx="2" ry="2" />
+<text  x="404.59" y="351.5" >dl_..</text>
+</g>
+<g >
+<title>pybind11::cpp_function::initialize&lt;pybind11::cpp_function::initialize&lt;int, PerfEventArray, int, pybind11::name, pybind11::is_method, pybind11::sibling, pybind11::arg&gt; (217,445,563 samples, 25.78%)</title><rect x="810.9" y="661" width="304.1" height="15.0" fill="rgb(227,103,24)" rx="2" ry="2" />
+<text  x="813.86" y="671.5" >pybind11::cpp_function::initialize&lt;pybin..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (65,857,798 samples, 7.81%)</title><rect x="345.5" y="693" width="92.1" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="348.53" y="703.5" >_PyEval_Eva..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,231,900 samples, 1.57%)</title><rect x="84.1" y="661" width="18.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="87.12" y="671.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (39,796,389 samples, 4.72%)</title><rect x="175.4" y="789" width="55.6" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="178.38" y="799.5" >PyImp..</text>
+</g>
+<g >
+<title>_PyObject_MakeTpCall (13,475,339 samples, 1.60%)</title><rect x="175.4" y="293" width="18.8" height="15.0" fill="rgb(229,113,27)" rx="2" ry="2" />
+<text  x="178.38" y="303.5" ></text>
+</g>
+<g >
+<title>_PyObject_MakeTpCall (11,290,026 samples, 1.34%)</title><rect x="1073.2" y="437" width="15.8" height="15.0" fill="rgb(229,113,27)" rx="2" ry="2" />
+<text  x="1076.21" y="447.5" ></text>
+</g>
+<g >
+<title>apic_ack_edge (5,472,278 samples, 0.65%)</title><rect x="1107.4" y="453" width="7.6" height="15.0" fill="rgb(244,182,43)" rx="2" ry="2" />
+<text  x="1110.36" y="463.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (65,857,798 samples, 7.81%)</title><rect x="345.5" y="741" width="92.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="348.53" y="751.5" >[libpython3..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,010,491 samples, 1.54%)</title><rect x="122.4" y="709" width="18.2" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="125.43" y="719.5" ></text>
+</g>
+<g >
+<title>virtqueue_poll (4,914,771 samples, 0.58%)</title><rect x="772.5" y="565" width="6.9" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="775.51" y="575.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (14,154,169 samples, 1.68%)</title><rect x="102.6" y="869" width="19.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="105.63" y="879.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="229" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="239.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (27,435,212 samples, 3.25%)</title><rect x="734.1" y="677" width="38.4" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="737.13" y="687.5" >[li..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (12,088,554 samples, 1.43%)</title><rect x="437.6" y="629" width="17.0" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="440.64" y="639.5" ></text>
+</g>
+<g >
+<title>__handle_mm_fault (13,892,765 samples, 1.65%)</title><rect x="306.7" y="165" width="19.5" height="15.0" fill="rgb(207,9,2)" rx="2" ry="2" />
+<text  x="309.75" y="175.5" ></text>
+</g>
+<g >
+<title>PyMarshal_ReadObjectFromString (9,177,604 samples, 1.09%)</title><rect x="488.0" y="565" width="12.9" height="15.0" fill="rgb(241,169,40)" rx="2" ry="2" />
+<text  x="491.03" y="575.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,101,248 samples, 1.55%)</title><rect x="249.4" y="293" width="18.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="252.36" y="303.5" ></text>
+</g>
+<g >
+<title>do_syscall_64 (34,819,369 samples, 4.13%)</title><rect x="1008.3" y="133" width="48.7" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="1011.33" y="143.5" >do_s..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,101,248 samples, 1.55%)</title><rect x="249.4" y="709" width="18.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="252.36" y="719.5" ></text>
+</g>
+<g >
+<title>_PyObject_GC_New (13,077,241 samples, 1.55%)</title><rect x="577.9" y="453" width="18.3" height="15.0" fill="rgb(238,152,36)" rx="2" ry="2" />
+<text  x="580.94" y="463.5" ></text>
+</g>
+<g >
+<title>handle_softirqs (4,914,771 samples, 0.58%)</title><rect x="772.5" y="629" width="6.9" height="15.0" fill="rgb(238,156,37)" rx="2" ry="2" />
+<text  x="775.51" y="639.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (39,796,389 samples, 4.72%)</title><rect x="175.4" y="533" width="55.6" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="178.38" y="543.5" >PyImp..</text>
+</g>
+<g >
+<title>PyMarshal_ReadObjectFromString (3,343,118 samples, 0.40%)</title><rect x="454.6" y="709" width="4.6" height="15.0" fill="rgb(241,169,40)" rx="2" ry="2" />
+<text  x="457.55" y="719.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,290,026 samples, 1.34%)</title><rect x="1073.2" y="421" width="15.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1076.21" y="431.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,101,248 samples, 1.55%)</title><rect x="249.4" y="741" width="18.3" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="252.36" y="751.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (14,154,169 samples, 1.68%)</title><rect x="102.6" y="277" width="19.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="105.63" y="287.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (65,857,798 samples, 7.81%)</title><rect x="345.5" y="677" width="92.1" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="348.53" y="687.5" >PyImport_Im..</text>
+</g>
+<g >
+<title>vfs_fstatat (12,088,554 samples, 1.43%)</title><rect x="437.6" y="469" width="17.0" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="440.64" y="479.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (12,088,554 samples, 1.43%)</title><rect x="437.6" y="549" width="17.0" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="440.64" y="559.5" ></text>
+</g>
+<g >
+<title>do_user_addr_fault (3,343,118 samples, 0.40%)</title><rect x="454.6" y="453" width="4.6" height="15.0" fill="rgb(228,108,25)" rx="2" ry="2" />
+<text  x="457.55" y="463.5" ></text>
+</g>
+<g >
+<title>vfs_statx (12,088,554 samples, 1.43%)</title><rect x="437.6" y="453" width="17.0" height="15.0" fill="rgb(242,172,41)" rx="2" ry="2" />
+<text  x="440.64" y="463.5" ></text>
+</g>
+<g >
+<title>dl_open_worker_begin (25,773,953 samples, 3.06%)</title><rect x="401.6" y="309" width="36.0" height="15.0" fill="rgb(233,129,31)" rx="2" ry="2" />
+<text  x="404.59" y="319.5" >dl_..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (12,088,554 samples, 1.43%)</title><rect x="437.6" y="645" width="17.0" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="440.64" y="655.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (13,010,491 samples, 1.54%)</title><rect x="122.4" y="597" width="18.2" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="125.43" y="607.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (39,796,389 samples, 4.72%)</title><rect x="175.4" y="405" width="55.6" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="178.38" y="415.5" >PyImp..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,832,756 samples, 1.64%)</title><rect x="326.2" y="245" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="329.18" y="255.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (13,762,235 samples, 1.63%)</title><rect x="156.1" y="741" width="19.3" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="159.13" y="751.5" ></text>
+</g>
+<g >
+<title>do_anonymous_page (3,343,118 samples, 0.40%)</title><rect x="454.6" y="405" width="4.6" height="15.0" fill="rgb(238,155,37)" rx="2" ry="2" />
+<text  x="457.55" y="415.5" ></text>
+</g>
+<g >
+<title>PyObject_CallFunction (11,085,125 samples, 1.31%)</title><rect x="140.6" y="789" width="15.5" height="15.0" fill="rgb(213,40,9)" rx="2" ry="2" />
+<text  x="143.63" y="799.5" ></text>
+</g>
+<g >
+<title>bool pybind11::detail::argument_loader&lt;PerfEventArray*, int&gt;::load_impl_sequence&lt;0ul, 1ul&gt; (6,084,023 samples, 0.72%)</title><rect x="810.9" y="613" width="8.5" height="15.0" fill="rgb(205,1,0)" rx="2" ry="2" />
+<text  x="813.86" y="623.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (65,857,798 samples, 7.81%)</title><rect x="345.5" y="709" width="92.1" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="348.53" y="719.5" >PyEval_Eval..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (14,154,169 samples, 1.68%)</title><rect x="102.6" y="245" width="19.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="105.63" y="255.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,231,900 samples, 1.57%)</title><rect x="84.1" y="613" width="18.5" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="87.12" y="623.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,010,491 samples, 1.54%)</title><rect x="122.4" y="501" width="18.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="125.43" y="511.5" ></text>
+</g>
+<g >
+<title>PyObject_CallFunction (13,598,462 samples, 1.61%)</title><rect x="345.5" y="389" width="19.0" height="15.0" fill="rgb(213,40,9)" rx="2" ry="2" />
+<text  x="348.53" y="399.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,353,427 samples, 1.58%)</title><rect x="654.1" y="373" width="18.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="657.14" y="383.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="405" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="415.5" ></text>
+</g>
+<g >
+<title>std::allocator&lt;unsigned long&gt;::deallocate (6,668,434 samples, 0.79%)</title><rect x="1127.6" y="581" width="9.3" height="15.0" fill="rgb(215,49,11)" rx="2" ry="2" />
+<text  x="1130.57" y="591.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (34,819,369 samples, 4.13%)</title><rect x="1008.3" y="197" width="48.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1011.33" y="207.5" >[lib..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (10,519,939 samples, 1.25%)</title><rect x="468.4" y="597" width="14.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="471.35" y="607.5" ></text>
+</g>
+<g >
+<title>__close (12,928,985 samples, 1.53%)</title><rect x="194.2" y="181" width="18.1" height="15.0" fill="rgb(236,145,34)" rx="2" ry="2" />
+<text  x="197.23" y="191.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (55,651,889 samples, 6.60%)</title><rect x="267.7" y="677" width="77.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="270.68" y="687.5" >[libpyth..</text>
+</g>
+<g >
+<title>_PyObject_GenericGetAttrWithDict (13,649,007 samples, 1.62%)</title><rect x="753.4" y="629" width="19.1" height="15.0" fill="rgb(206,6,1)" rx="2" ry="2" />
+<text  x="756.41" y="639.5" ></text>
+</g>
+<g >
+<title>vfs_write (12,827,129 samples, 1.52%)</title><rect x="1008.3" y="101" width="18.0" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="1011.33" y="111.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (39,796,389 samples, 4.72%)</title><rect x="175.4" y="613" width="55.6" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="178.38" y="623.5" >_PyEv..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="453" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="463.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (26,485,383 samples, 3.14%)</title><rect x="364.5" y="437" width="37.1" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="367.55" y="447.5" >_Py..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (14,070,730 samples, 1.67%)</title><rect x="468.4" y="741" width="19.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="471.35" y="751.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (11,085,125 samples, 1.31%)</title><rect x="140.6" y="725" width="15.5" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="143.63" y="735.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (67,831,629 samples, 8.04%)</title><rect x="577.9" y="629" width="94.9" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="580.94" y="639.5" >[libpython3..</text>
+</g>
+<g >
+<title>folio_alloc_mpol_noprof (3,343,118 samples, 0.40%)</title><rect x="454.6" y="373" width="4.6" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="457.55" y="383.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (34,819,369 samples, 4.13%)</title><rect x="1008.3" y="341" width="48.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1011.33" y="351.5" >[lib..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,738,833 samples, 1.63%)</title><rect x="364.5" y="309" width="19.3" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="367.55" y="319.5" ></text>
+</g>
+<g >
+<title>pybind11::getattr (11,570,826 samples, 1.37%)</title><rect x="984.2" y="405" width="16.1" height="15.0" fill="rgb(229,111,26)" rx="2" ry="2" />
+<text  x="987.15" y="415.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (14,154,169 samples, 1.68%)</title><rect x="102.6" y="757" width="19.8" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="105.63" y="767.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (13,762,235 samples, 1.63%)</title><rect x="156.1" y="693" width="19.3" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="159.13" y="703.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (13,353,427 samples, 1.58%)</title><rect x="654.1" y="357" width="18.7" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="657.14" y="367.5" ></text>
+</g>
+<g >
+<title>PyDict_SetItemString (14,154,169 samples, 1.68%)</title><rect x="102.6" y="261" width="19.8" height="15.0" fill="rgb(253,222,53)" rx="2" ry="2" />
+<text  x="105.63" y="271.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (14,154,169 samples, 1.68%)</title><rect x="102.6" y="725" width="19.8" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="105.63" y="735.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (34,819,369 samples, 4.13%)</title><rect x="1008.3" y="357" width="48.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1011.33" y="367.5" >[lib..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (39,796,389 samples, 4.72%)</title><rect x="175.4" y="629" width="55.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="178.38" y="639.5" >[libp..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,231,900 samples, 1.57%)</title><rect x="84.1" y="341" width="18.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="87.12" y="351.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,231,900 samples, 1.57%)</title><rect x="84.1" y="773" width="18.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="87.12" y="783.5" ></text>
+</g>
+<g >
+<title>update_load_avg (7,789,645 samples, 0.92%)</title><rect x="919.5" y="373" width="10.9" height="15.0" fill="rgb(240,165,39)" rx="2" ry="2" />
+<text  x="922.49" y="383.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (11,085,125 samples, 1.31%)</title><rect x="140.6" y="693" width="15.5" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="143.63" y="703.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (12,746,550 samples, 1.51%)</title><rect x="383.8" y="325" width="17.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="386.76" y="335.5" ></text>
+</g>
+<g >
+<title>PyObject_Vectorcall (27,725,521 samples, 3.29%)</title><rect x="306.7" y="357" width="38.8" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="309.75" y="367.5" >PyO..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (14,154,169 samples, 1.68%)</title><rect x="102.6" y="741" width="19.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="105.63" y="751.5" ></text>
+</g>
+<g >
+<title>_dlerror_run (25,773,953 samples, 3.06%)</title><rect x="401.6" y="437" width="36.0" height="15.0" fill="rgb(210,27,6)" rx="2" ry="2" />
+<text  x="404.59" y="447.5" >_dl..</text>
+</g>
+<g >
+<title>PyList_New (13,738,833 samples, 1.63%)</title><rect x="364.5" y="245" width="19.3" height="15.0" fill="rgb(214,45,10)" rx="2" ry="2" />
+<text  x="367.55" y="255.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (13,101,248 samples, 1.55%)</title><rect x="249.4" y="565" width="18.3" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="252.36" y="575.5" ></text>
+</g>
+<g >
+<title>run_timer_softirq (160,126 samples, 0.02%)</title><rect x="1182.5" y="741" width="0.2" height="15.0" fill="rgb(249,206,49)" rx="2" ry="2" />
+<text  x="1185.48" y="751.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,566,010 samples, 1.37%)</title><rect x="1057.0" y="325" width="16.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1060.04" y="335.5" ></text>
+</g>
+<g >
+<title>pybind11::object pybind11::detail::object_api&lt;pybind11::detail::accessor&lt;pybind11::detail::accessor_policies::str_attr&gt; &gt;::operator (11,570,826 samples, 1.37%)</title><rect x="984.2" y="469" width="16.1" height="15.0" fill="rgb(208,16,4)" rx="2" ry="2" />
+<text  x="987.15" y="479.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (6,520,899 samples, 0.77%)</title><rect x="459.2" y="677" width="9.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="462.23" y="687.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,598,462 samples, 1.61%)</title><rect x="345.5" y="517" width="19.0" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="348.53" y="527.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (13,010,491 samples, 1.54%)</title><rect x="122.4" y="693" width="18.2" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="125.43" y="703.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="805" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="815.5" ></text>
+</g>
+<g >
+<title>ksys_write (12,827,129 samples, 1.52%)</title><rect x="1008.3" y="117" width="18.0" height="15.0" fill="rgb(205,4,1)" rx="2" ry="2" />
+<text  x="1011.33" y="127.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (13,762,235 samples, 1.63%)</title><rect x="156.1" y="581" width="19.3" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="159.13" y="591.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (13,231,900 samples, 1.57%)</title><rect x="84.1" y="453" width="18.5" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="87.12" y="463.5" ></text>
+</g>
+<g >
+<title>syscall_exit_to_user_mode (5,227,984 samples, 0.62%)</title><rect x="950.5" y="501" width="7.3" height="15.0" fill="rgb(251,211,50)" rx="2" ry="2" />
+<text  x="953.53" y="511.5" ></text>
+</g>
+<g >
+<title>llvm::SelectionDAGISel::CodeGenAndEmitDAG (13,328,113 samples, 1.58%)</title><rect x="65.5" y="741" width="18.6" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="68.48" y="751.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,101,248 samples, 1.55%)</title><rect x="249.4" y="389" width="18.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="252.36" y="399.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (13,762,235 samples, 1.63%)</title><rect x="156.1" y="821" width="19.3" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="159.13" y="831.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (13,010,491 samples, 1.54%)</title><rect x="122.4" y="565" width="18.2" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="125.43" y="575.5" ></text>
+</g>
+<g >
+<title>pybind11::detail::function_call::~function_call (6,668,434 samples, 0.79%)</title><rect x="1127.6" y="661" width="9.3" height="15.0" fill="rgb(254,227,54)" rx="2" ry="2" />
+<text  x="1130.57" y="671.5" ></text>
+</g>
+<g >
+<title>perf_buffer__process_record (74,963,025 samples, 8.89%)</title><rect x="984.2" y="517" width="104.8" height="15.0" fill="rgb(209,19,4)" rx="2" ry="2" />
+<text  x="987.15" y="527.5" >perf_buffer_..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (34,819,369 samples, 4.13%)</title><rect x="1008.3" y="261" width="48.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1011.33" y="271.5" >[lib..</text>
+</g>
+<g >
+<title>bpf_lsm_inode_getattr (12,088,554 samples, 1.43%)</title><rect x="437.6" y="405" width="17.0" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
+<text  x="440.64" y="415.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (11,085,125 samples, 1.31%)</title><rect x="140.6" y="437" width="15.5" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="143.63" y="447.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (90,744,775 samples, 10.76%)</title><rect x="122.4" y="885" width="127.0" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="125.43" y="895.5" >[libpython3.13...</text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (14,154,169 samples, 1.68%)</title><rect x="102.6" y="517" width="19.8" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="105.63" y="527.5" ></text>
+</g>
+<g >
+<title>schedule_hrtimeout_range (55,711,545 samples, 6.60%)</title><rect x="861.0" y="469" width="78.0" height="15.0" fill="rgb(221,75,18)" rx="2" ry="2" />
+<text  x="864.04" y="479.5" >schedule_..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (10,519,939 samples, 1.25%)</title><rect x="468.4" y="389" width="14.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="471.35" y="399.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (55,651,889 samples, 6.60%)</title><rect x="267.7" y="757" width="77.8" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="270.68" y="767.5" >_PyEval_..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (52,259,336 samples, 6.19%)</title><rect x="364.5" y="565" width="73.1" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="367.55" y="575.5" >_PyEval_..</text>
+</g>
+<g >
+<title>__common_interrupt (5,472,278 samples, 0.65%)</title><rect x="1107.4" y="485" width="7.6" height="15.0" fill="rgb(237,150,36)" rx="2" ry="2" />
+<text  x="1110.36" y="495.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,598,462 samples, 1.61%)</title><rect x="345.5" y="565" width="19.0" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="348.53" y="575.5" ></text>
+</g>
+<g >
+<title>std::_Tuple_impl&lt;0ul, pybind11::detail::type_caster&lt;BpfMap, void&gt; &gt;::_Tuple_impl (11,290,026 samples, 1.34%)</title><rect x="1073.2" y="325" width="15.8" height="15.0" fill="rgb(209,19,4)" rx="2" ry="2" />
+<text  x="1076.21" y="335.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (52,259,336 samples, 6.19%)</title><rect x="364.5" y="533" width="73.1" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="367.55" y="543.5" >PyObject..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,353,427 samples, 1.58%)</title><rect x="654.1" y="245" width="18.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="657.14" y="255.5" ></text>
+</g>
+<g >
+<title>net_rx_action (4,914,771 samples, 0.58%)</title><rect x="772.5" y="613" width="6.9" height="15.0" fill="rgb(240,164,39)" rx="2" ry="2" />
+<text  x="775.51" y="623.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (13,101,248 samples, 1.55%)</title><rect x="249.4" y="485" width="18.3" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="252.36" y="495.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (3,343,118 samples, 0.40%)</title><rect x="454.6" y="725" width="4.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="457.55" y="735.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,598,462 samples, 1.61%)</title><rect x="345.5" y="341" width="19.0" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="348.53" y="351.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (13,762,235 samples, 1.63%)</title><rect x="156.1" y="837" width="19.3" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="159.13" y="847.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (65,857,798 samples, 7.81%)</title><rect x="345.5" y="725" width="92.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="348.53" y="735.5" >[libpython3..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,392,065 samples, 1.59%)</title><rect x="212.3" y="341" width="18.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="215.32" y="351.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (160,126 samples, 0.02%)</title><rect x="1182.5" y="789" width="0.2" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="1185.48" y="799.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (41,700,154 samples, 4.94%)</title><rect x="287.2" y="421" width="58.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="290.20" y="431.5" >[libpy..</text>
+</g>
+<g >
+<title>post_alloc_hook (13,892,765 samples, 1.65%)</title><rect x="306.7" y="53" width="19.5" height="15.0" fill="rgb(227,104,24)" rx="2" ry="2" />
+<text  x="309.75" y="63.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,231,900 samples, 1.57%)</title><rect x="84.1" y="437" width="18.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="87.12" y="447.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,010,491 samples, 1.54%)</title><rect x="122.4" y="613" width="18.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="125.43" y="623.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (13,231,900 samples, 1.57%)</title><rect x="84.1" y="581" width="18.5" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="87.12" y="591.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,085,125 samples, 1.31%)</title><rect x="140.6" y="597" width="15.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="143.63" y="607.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,010,491 samples, 1.54%)</title><rect x="122.4" y="309" width="18.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="125.43" y="319.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (41,700,154 samples, 4.94%)</title><rect x="287.2" y="389" width="58.3" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="290.20" y="399.5" >PyEval..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (65,674,888 samples, 7.78%)</title><rect x="687.5" y="709" width="91.9" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="690.52" y="719.5" >[libpython..</text>
+</g>
+<g >
+<title>__libc_start_call_main (13,156,656 samples, 1.56%)</title><rect x="10.0" y="853" width="18.4" height="15.0" fill="rgb(210,26,6)" rx="2" ry="2" />
+<text  x="13.00" y="863.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,231,900 samples, 1.57%)</title><rect x="84.1" y="805" width="18.5" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="87.12" y="815.5" ></text>
+</g>
+<g >
+<title>pybind11::detail::argument_loader&lt;BpfMap const*&gt;::argument_loader (11,290,026 samples, 1.34%)</title><rect x="1073.2" y="357" width="15.8" height="15.0" fill="rgb(245,188,45)" rx="2" ry="2" />
+<text  x="1076.21" y="367.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,231,900 samples, 1.57%)</title><rect x="84.1" y="677" width="18.5" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="87.12" y="687.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (11,085,125 samples, 1.31%)</title><rect x="140.6" y="661" width="15.5" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="143.63" y="671.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (13,231,900 samples, 1.57%)</title><rect x="84.1" y="469" width="18.5" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="87.12" y="479.5" ></text>
+</g>
+<g >
+<title>PyFunction_NewWithQualName (13,892,765 samples, 1.65%)</title><rect x="306.7" y="293" width="19.5" height="15.0" fill="rgb(211,28,6)" rx="2" ry="2" />
+<text  x="309.75" y="303.5" ></text>
+</g>
+<g >
+<title>do_syscall_64 (13,786,205 samples, 1.63%)</title><rect x="734.1" y="501" width="19.3" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="737.13" y="511.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,762,235 samples, 1.63%)</title><rect x="156.1" y="597" width="19.3" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="159.13" y="607.5" ></text>
+</g>
+<g >
+<title>pybind11::detail::type_caster&lt;BpfMap, void&gt;::type_caster (11,290,026 samples, 1.34%)</title><rect x="1073.2" y="293" width="15.8" height="15.0" fill="rgb(234,134,32)" rx="2" ry="2" />
+<text  x="1076.21" y="303.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (67,831,629 samples, 8.04%)</title><rect x="577.9" y="597" width="94.9" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="580.94" y="607.5" >_PyEval_Eva..</text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (65,857,798 samples, 7.81%)</title><rect x="345.5" y="805" width="92.1" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="348.53" y="815.5" >PyImport_Im..</text>
+</g>
+<g >
+<title>handle_softirqs (160,126 samples, 0.02%)</title><rect x="1182.5" y="757" width="0.2" height="15.0" fill="rgb(238,156,37)" rx="2" ry="2" />
+<text  x="1185.48" y="767.5" ></text>
+</g>
+<g >
+<title>pybind11::detail::argument_loader&lt;PerfEventArray*, int&gt;::load_args (6,084,023 samples, 0.72%)</title><rect x="810.9" y="629" width="8.5" height="15.0" fill="rgb(221,76,18)" rx="2" ry="2" />
+<text  x="813.86" y="639.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,598,462 samples, 1.61%)</title><rect x="345.5" y="485" width="19.0" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="348.53" y="495.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (55,651,889 samples, 6.60%)</title><rect x="267.7" y="565" width="77.8" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="270.68" y="575.5" >_PyEval_..</text>
+</g>
+<g >
+<title>_dl_sysdep_start (476,505 samples, 0.06%)</title><rect x="1182.0" y="853" width="0.7" height="15.0" fill="rgb(234,137,32)" rx="2" ry="2" />
+<text  x="1185.04" y="863.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,543,810 samples, 1.61%)</title><rect x="791.9" y="661" width="19.0" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="794.92" y="671.5" ></text>
+</g>
+<g >
+<title>__do_sys_newfstatat (12,088,554 samples, 1.43%)</title><rect x="437.6" y="485" width="17.0" height="15.0" fill="rgb(243,177,42)" rx="2" ry="2" />
+<text  x="440.64" y="495.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,302,363 samples, 1.58%)</title><rect x="1163.4" y="661" width="18.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1166.43" y="671.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (13,598,462 samples, 1.61%)</title><rect x="345.5" y="453" width="19.0" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="348.53" y="463.5" ></text>
+</g>
+<g >
+<title>all (843,616,358 samples, 100%)</title><rect x="10.0" y="917" width="1180.0" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="13.00" y="927.5" ></text>
+</g>
+<g >
+<title>pybind11::detail::function_call::function_call (8,979,352 samples, 1.06%)</title><rect x="1115.0" y="661" width="12.6" height="15.0" fill="rgb(218,61,14)" rx="2" ry="2" />
+<text  x="1118.01" y="671.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (14,154,169 samples, 1.68%)</title><rect x="102.6" y="453" width="19.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="105.63" y="463.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,010,491 samples, 1.54%)</title><rect x="122.4" y="789" width="18.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="125.43" y="799.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (54,754,388 samples, 6.49%)</title><rect x="596.2" y="437" width="76.6" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="599.23" y="447.5" >PyObject..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,101,248 samples, 1.55%)</title><rect x="249.4" y="517" width="18.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="252.36" y="527.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,010,491 samples, 1.54%)</title><rect x="122.4" y="773" width="18.2" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="125.43" y="783.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,231,900 samples, 1.57%)</title><rect x="84.1" y="741" width="18.5" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="87.12" y="751.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,010,491 samples, 1.54%)</title><rect x="122.4" y="405" width="18.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="125.43" y="415.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,392,065 samples, 1.59%)</title><rect x="212.3" y="325" width="18.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="215.32" y="335.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,231,900 samples, 1.57%)</title><rect x="84.1" y="389" width="18.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="87.12" y="399.5" ></text>
+</g>
+<g >
+<title>__x64_sys_vfork (13,786,205 samples, 1.63%)</title><rect x="734.1" y="485" width="19.3" height="15.0" fill="rgb(215,48,11)" rx="2" ry="2" />
+<text  x="737.13" y="495.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (10,519,939 samples, 1.25%)</title><rect x="468.4" y="421" width="14.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="471.35" y="431.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,085,125 samples, 1.31%)</title><rect x="140.6" y="485" width="15.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="143.63" y="495.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (13,974,633 samples, 1.66%)</title><rect x="287.2" y="357" width="19.5" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="290.20" y="367.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (41,700,154 samples, 4.94%)</title><rect x="287.2" y="373" width="58.3" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="290.20" y="383.5" >_PyEva..</text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (13,101,248 samples, 1.55%)</title><rect x="249.4" y="661" width="18.3" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="252.36" y="671.5" ></text>
+</g>
+<g >
+<title>std::unordered_map&lt;std::type_index, pybind11::detail::type_info*, std::hash&lt;std::type_index&gt;, std::equal_to&lt;std::type_index&gt;, std::allocator&lt;std::pair&lt;std::type_index const, pybind11::detail::type_info*&gt; &gt; &gt;::find (11,290,026 samples, 1.34%)</title><rect x="1073.2" y="165" width="15.8" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="1076.21" y="175.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,231,900 samples, 1.57%)</title><rect x="84.1" y="517" width="18.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="87.12" y="527.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (55,651,889 samples, 6.60%)</title><rect x="267.7" y="469" width="77.8" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="270.68" y="479.5" >PyObject..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (39,796,389 samples, 4.72%)</title><rect x="175.4" y="549" width="55.6" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="178.38" y="559.5" >_PyEv..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="309" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="319.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,302,363 samples, 1.58%)</title><rect x="1163.4" y="677" width="18.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1166.43" y="687.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (39,796,389 samples, 4.72%)</title><rect x="175.4" y="677" width="55.6" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="178.38" y="687.5" >_PyEv..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (54,754,388 samples, 6.49%)</title><rect x="596.2" y="421" width="76.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="599.23" y="431.5" >[libpyth..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,231,900 samples, 1.57%)</title><rect x="84.1" y="821" width="18.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="87.12" y="831.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (9,177,604 samples, 1.09%)</title><rect x="488.0" y="629" width="12.9" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="491.03" y="639.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,392,065 samples, 1.59%)</title><rect x="212.3" y="293" width="18.7" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="215.32" y="303.5" ></text>
+</g>
+<g >
+<title>PyObject_CallNoArgs (11,085,125 samples, 1.31%)</title><rect x="140.6" y="341" width="15.5" height="15.0" fill="rgb(241,168,40)" rx="2" ry="2" />
+<text  x="143.63" y="351.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (67,831,629 samples, 8.04%)</title><rect x="577.9" y="517" width="94.9" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="580.94" y="527.5" >[libpython3..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (54,754,388 samples, 6.49%)</title><rect x="596.2" y="469" width="76.6" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="599.23" y="479.5" >_PyEval_..</text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (14,154,169 samples, 1.68%)</title><rect x="102.6" y="885" width="19.8" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="105.63" y="895.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (13,231,900 samples, 1.57%)</title><rect x="84.1" y="501" width="18.5" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="87.12" y="511.5" ></text>
+</g>
+<g >
+<title>PyObject_Vectorcall (13,101,248 samples, 1.55%)</title><rect x="249.4" y="325" width="18.3" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="252.36" y="335.5" ></text>
+</g>
+<g >
+<title>__libc_start_main@@GLIBC_2.34 (532,188,561 samples, 63.08%)</title><rect x="437.6" y="869" width="744.4" height="15.0" fill="rgb(229,113,27)" rx="2" ry="2" />
+<text  x="440.64" y="879.5" >__libc_start_main@@GLIBC_2.34</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (12,088,554 samples, 1.43%)</title><rect x="437.6" y="693" width="17.0" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="440.64" y="703.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (13,231,900 samples, 1.57%)</title><rect x="84.1" y="597" width="18.5" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="87.12" y="607.5" ></text>
+</g>
+<g >
+<title>pybind11::cpp_function::dispatcher (245,726,354 samples, 29.13%)</title><rect x="810.9" y="677" width="343.7" height="15.0" fill="rgb(221,75,18)" rx="2" ry="2" />
+<text  x="813.86" y="687.5" >pybind11::cpp_function::dispatcher</text>
+</g>
+<g >
+<title>__lruvec_stat_mod_folio (13,156,656 samples, 1.56%)</title><rect x="10.0" y="629" width="18.4" height="15.0" fill="rgb(246,191,45)" rx="2" ry="2" />
+<text  x="13.00" y="639.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (13,762,235 samples, 1.63%)</title><rect x="156.1" y="485" width="19.3" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="159.13" y="495.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (10,519,939 samples, 1.25%)</title><rect x="468.4" y="629" width="14.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="471.35" y="639.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (81,062,412 samples, 9.61%)</title><rect x="559.4" y="661" width="113.4" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="562.43" y="671.5" >_PyEval_EvalFr..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (10,519,939 samples, 1.25%)</title><rect x="468.4" y="405" width="14.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="471.35" y="415.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (160,126 samples, 0.02%)</title><rect x="1182.5" y="805" width="0.2" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="1185.48" y="815.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (39,796,389 samples, 4.72%)</title><rect x="175.4" y="597" width="55.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="178.38" y="607.5" >[libp..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (55,651,889 samples, 6.60%)</title><rect x="267.7" y="501" width="77.8" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="270.68" y="511.5" >_PyEval_..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="773" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="783.5" ></text>
+</g>
+<g >
+<title>_PyObject_MakeTpCall (12,746,550 samples, 1.51%)</title><rect x="383.8" y="357" width="17.8" height="15.0" fill="rgb(229,113,27)" rx="2" ry="2" />
+<text  x="386.76" y="367.5" ></text>
+</g>
+<g >
+<title>PyObject_CallOneArg (10,519,939 samples, 1.25%)</title><rect x="468.4" y="725" width="14.7" height="15.0" fill="rgb(232,124,29)" rx="2" ry="2" />
+<text  x="471.35" y="735.5" ></text>
+</g>
+<g >
+<title>PyObject_Vectorcall (10,519,939 samples, 1.25%)</title><rect x="468.4" y="533" width="14.7" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="471.35" y="543.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (3,343,118 samples, 0.40%)</title><rect x="454.6" y="565" width="4.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="457.55" y="575.5" ></text>
+</g>
+<g >
+<title>alloc_pages_mpol (13,892,765 samples, 1.65%)</title><rect x="306.7" y="101" width="19.5" height="15.0" fill="rgb(254,227,54)" rx="2" ry="2" />
+<text  x="309.75" y="111.5" ></text>
+</g>
+<g >
+<title>schedule (50,016,824 samples, 5.93%)</title><rect x="869.0" y="453" width="70.0" height="15.0" fill="rgb(254,229,54)" rx="2" ry="2" />
+<text  x="872.00" y="463.5" >schedule</text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (13,010,491 samples, 1.54%)</title><rect x="122.4" y="821" width="18.2" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="125.43" y="831.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (55,651,889 samples, 6.60%)</title><rect x="267.7" y="709" width="77.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="270.68" y="719.5" >[libpyth..</text>
+</g>
+<g >
+<title>PyEval_EvalCode (14,154,169 samples, 1.68%)</title><rect x="102.6" y="421" width="19.8" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="105.63" y="431.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (13,598,462 samples, 1.61%)</title><rect x="345.5" y="501" width="19.0" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="348.53" y="511.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,786,205 samples, 1.63%)</title><rect x="734.1" y="661" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="737.13" y="671.5" ></text>
+</g>
+<g >
+<title>llvm::SelectionDAGISel::SelectAllBasicBlocks (13,328,113 samples, 1.58%)</title><rect x="65.5" y="757" width="18.6" height="15.0" fill="rgb(222,81,19)" rx="2" ry="2" />
+<text  x="68.48" y="767.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (39,796,389 samples, 4.72%)</title><rect x="175.4" y="645" width="55.6" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="178.38" y="655.5" >PyObj..</text>
+</g>
+<g >
+<title>vma_alloc_folio_noprof (3,343,118 samples, 0.40%)</title><rect x="454.6" y="389" width="4.6" height="15.0" fill="rgb(218,61,14)" rx="2" ry="2" />
+<text  x="457.55" y="399.5" ></text>
+</g>
+<g >
+<title>Py_BytesMain (45,200,905 samples, 5.36%)</title><rect x="437.6" y="837" width="63.3" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="440.64" y="847.5" >Py_Byt..</text>
+</g>
+<g >
+<title>PyEval_EvalCode (39,796,389 samples, 4.72%)</title><rect x="175.4" y="565" width="55.6" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="178.38" y="575.5" >PyEva..</text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (13,598,462 samples, 1.61%)</title><rect x="345.5" y="581" width="19.0" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="348.53" y="591.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (14,154,169 samples, 1.68%)</title><rect x="102.6" y="805" width="19.8" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="105.63" y="815.5" ></text>
+</g>
+<g >
+<title>__GI___libc_write (34,819,369 samples, 4.13%)</title><rect x="1008.3" y="165" width="48.7" height="15.0" fill="rgb(217,57,13)" rx="2" ry="2" />
+<text  x="1011.33" y="175.5" >__GI..</text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (12,088,554 samples, 1.43%)</title><rect x="437.6" y="677" width="17.0" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="440.64" y="687.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,010,491 samples, 1.54%)</title><rect x="122.4" y="293" width="18.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="125.43" y="303.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,786,205 samples, 1.63%)</title><rect x="734.1" y="645" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="737.13" y="655.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (3,343,118 samples, 0.40%)</title><rect x="454.6" y="597" width="4.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="457.55" y="607.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (3,343,118 samples, 0.40%)</title><rect x="454.6" y="613" width="4.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="457.55" y="623.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (13,010,491 samples, 1.54%)</title><rect x="122.4" y="677" width="18.2" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="125.43" y="687.5" ></text>
+</g>
+<g >
+<title>asm_exc_page_fault (13,892,765 samples, 1.65%)</title><rect x="306.7" y="229" width="19.5" height="15.0" fill="rgb(225,93,22)" rx="2" ry="2" />
+<text  x="309.75" y="239.5" ></text>
+</g>
+<g >
+<title>__tls_get_addr@plt (2,086,216 samples, 0.25%)</title><rect x="485.1" y="677" width="2.9" height="15.0" fill="rgb(212,35,8)" rx="2" ry="2" />
+<text  x="488.11" y="687.5" ></text>
+</g>
+<g >
+<title>PyObject_Vectorcall (40,536,163 samples, 4.81%)</title><rect x="1000.3" y="437" width="56.7" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="1003.34" y="447.5" >PyObje..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (14,154,169 samples, 1.68%)</title><rect x="102.6" y="613" width="19.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="105.63" y="623.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (11,085,125 samples, 1.31%)</title><rect x="140.6" y="501" width="15.5" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="143.63" y="511.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (65,857,798 samples, 7.81%)</title><rect x="345.5" y="821" width="92.1" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="348.53" y="831.5" >_PyEval_Eva..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,566,010 samples, 1.37%)</title><rect x="1057.0" y="309" width="16.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1060.04" y="319.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="517" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="527.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="421" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="431.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (65,857,798 samples, 7.81%)</title><rect x="345.5" y="645" width="92.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="348.53" y="655.5" >[libpython3..</text>
+</g>
+<g >
+<title>hrtimer_start_range_ns (5,694,721 samples, 0.68%)</title><rect x="861.0" y="453" width="8.0" height="15.0" fill="rgb(244,179,42)" rx="2" ry="2" />
+<text  x="864.04" y="463.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,598,462 samples, 1.61%)</title><rect x="345.5" y="549" width="19.0" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="348.53" y="559.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (55,651,889 samples, 6.60%)</title><rect x="267.7" y="613" width="77.8" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="270.68" y="623.5" >PyImport..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (10,519,939 samples, 1.25%)</title><rect x="468.4" y="677" width="14.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="471.35" y="687.5" ></text>
+</g>
+<g >
+<title>pybind11::cpp_function::initialize&lt;pybind11::cpp_function::initialize&lt;pybind11::list, BpfMap, , pybind11::name, pybind11::is_method, pybind11::sibling&gt; (11,290,026 samples, 1.34%)</title><rect x="1073.2" y="373" width="15.8" height="15.0" fill="rgb(234,137,32)" rx="2" ry="2" />
+<text  x="1076.21" y="383.5" ></text>
+</g>
+<g >
+<title>pybind11::gil_scoped_release::~gil_scoped_release (18,590,386 samples, 2.20%)</title><rect x="1089.0" y="565" width="26.0" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="1092.01" y="575.5" >p..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (67,831,629 samples, 8.04%)</title><rect x="577.9" y="645" width="94.9" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="580.94" y="655.5" >[libpython3..</text>
+</g>
+<g >
+<title>PyObject_Vectorcall (13,786,205 samples, 1.63%)</title><rect x="734.1" y="613" width="19.3" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="737.13" y="623.5" ></text>
+</g>
+<g >
+<title>PyObject_CallFinalizerFromDealloc (11,566,010 samples, 1.37%)</title><rect x="1057.0" y="421" width="16.2" height="15.0" fill="rgb(226,99,23)" rx="2" ry="2" />
+<text  x="1060.04" y="431.5" ></text>
+</g>
+<g >
+<title>perf_ctx_disable (14,704,884 samples, 1.74%)</title><rect x="881.6" y="405" width="20.6" height="15.0" fill="rgb(223,86,20)" rx="2" ry="2" />
+<text  x="884.63" y="415.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (68,753,137 samples, 8.15%)</title><rect x="249.4" y="821" width="96.1" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="252.36" y="831.5" >_PyEval_Eva..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (12,088,554 samples, 1.43%)</title><rect x="437.6" y="709" width="17.0" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="440.64" y="719.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (52,259,336 samples, 6.19%)</title><rect x="364.5" y="581" width="73.1" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="367.55" y="591.5" >PyEval_E..</text>
+</g>
+<g >
+<title>PyObject_GetAttr (11,570,826 samples, 1.37%)</title><rect x="984.2" y="373" width="16.1" height="15.0" fill="rgb(216,52,12)" rx="2" ry="2" />
+<text  x="987.15" y="383.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (55,651,889 samples, 6.60%)</title><rect x="267.7" y="725" width="77.8" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="270.68" y="735.5" >PyObject..</text>
+</g>
+<g >
+<title>PyEval_EvalCode (14,154,169 samples, 1.68%)</title><rect x="102.6" y="677" width="19.8" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="105.63" y="687.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (27,774,461 samples, 3.29%)</title><rect x="615.3" y="261" width="38.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="618.29" y="271.5" >[li..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,101,248 samples, 1.55%)</title><rect x="249.4" y="277" width="18.3" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="252.36" y="287.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (6,520,899 samples, 0.77%)</title><rect x="459.2" y="661" width="9.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="462.23" y="671.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,077,241 samples, 1.55%)</title><rect x="577.9" y="437" width="18.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="580.94" y="447.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,231,900 samples, 1.57%)</title><rect x="84.1" y="645" width="18.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="87.12" y="655.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (13,010,491 samples, 1.54%)</title><rect x="122.4" y="805" width="18.2" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="125.43" y="815.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (14,154,169 samples, 1.68%)</title><rect x="102.6" y="629" width="19.8" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="105.63" y="639.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,566,010 samples, 1.37%)</title><rect x="1057.0" y="373" width="16.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1060.04" y="383.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,010,491 samples, 1.54%)</title><rect x="122.4" y="453" width="18.2" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="125.43" y="463.5" ></text>
+</g>
+<g >
+<title>_PyObject_MakeTpCall (10,519,939 samples, 1.25%)</title><rect x="468.4" y="469" width="14.7" height="15.0" fill="rgb(229,113,27)" rx="2" ry="2" />
+<text  x="471.35" y="479.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,101,248 samples, 1.55%)</title><rect x="249.4" y="597" width="18.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="252.36" y="607.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,101,248 samples, 1.55%)</title><rect x="249.4" y="421" width="18.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="252.36" y="431.5" ></text>
+</g>
+<g >
+<title>folio_alloc_mpol_noprof (13,892,765 samples, 1.65%)</title><rect x="306.7" y="117" width="19.5" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="309.75" y="127.5" ></text>
+</g>
+<g >
+<title>set_pte_range (13,156,656 samples, 1.56%)</title><rect x="10.0" y="661" width="18.4" height="15.0" fill="rgb(224,90,21)" rx="2" ry="2" />
+<text  x="13.00" y="671.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (3,343,118 samples, 0.40%)</title><rect x="454.6" y="533" width="4.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="457.55" y="543.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="133" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="143.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (13,392,065 samples, 1.59%)</title><rect x="212.3" y="309" width="18.7" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="215.32" y="319.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,475,339 samples, 1.60%)</title><rect x="175.4" y="325" width="18.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="178.38" y="335.5" ></text>
+</g>
+<g >
+<title>asm_exc_page_fault (3,343,118 samples, 0.40%)</title><rect x="454.6" y="485" width="4.6" height="15.0" fill="rgb(225,93,22)" rx="2" ry="2" />
+<text  x="457.55" y="495.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (13,353,427 samples, 1.58%)</title><rect x="654.1" y="325" width="18.7" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="657.14" y="335.5" ></text>
+</g>
+<g >
+<title>PyObject_VectorcallMethod (34,819,369 samples, 4.13%)</title><rect x="1008.3" y="373" width="48.7" height="15.0" fill="rgb(236,142,34)" rx="2" ry="2" />
+<text  x="1011.33" y="383.5" >PyOb..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="213" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="223.5" ></text>
+</g>
+<g >
+<title>dequeue_entity (7,789,645 samples, 0.92%)</title><rect x="919.5" y="389" width="10.9" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="922.49" y="399.5" ></text>
+</g>
+<g >
+<title>PyFile_WriteObject (5,716,794 samples, 0.68%)</title><rect x="1000.3" y="389" width="8.0" height="15.0" fill="rgb(222,82,19)" rx="2" ry="2" />
+<text  x="1003.34" y="399.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,302,363 samples, 1.58%)</title><rect x="1163.4" y="645" width="18.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1166.43" y="655.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (55,651,889 samples, 6.60%)</title><rect x="267.7" y="741" width="77.8" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="270.68" y="751.5" >PyImport..</text>
+</g>
+<g >
+<title>asm_exc_page_fault (13,462,351 samples, 1.60%)</title><rect x="46.7" y="805" width="18.8" height="15.0" fill="rgb(225,93,22)" rx="2" ry="2" />
+<text  x="49.65" y="815.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,249,826 samples, 1.33%)</title><rect x="1099.3" y="549" width="15.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1102.27" y="559.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="277" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="287.5" ></text>
+</g>
+<g >
+<title>__irqentry_text_start (12,928,985 samples, 1.53%)</title><rect x="194.2" y="165" width="18.1" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="197.23" y="175.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;std::type_index, std::pair&lt;std::type_index const, pybind11::detail::type_info*&gt;, std::allocator&lt;std::pair&lt;std::type_index const, pybind11::detail::type_info*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;std::type_index&gt;, std::hash&lt;std::type_index&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, true&gt; &gt;::_M_locate (11,290,026 samples, 1.34%)</title><rect x="1073.2" y="133" width="15.8" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="1076.21" y="143.5" ></text>
+</g>
+<g >
+<title>std::vector&lt;bool, std::allocator&lt;bool&gt; &gt;::~vector (6,668,434 samples, 0.79%)</title><rect x="1127.6" y="645" width="9.3" height="15.0" fill="rgb(249,204,48)" rx="2" ry="2" />
+<text  x="1130.57" y="655.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (10,519,939 samples, 1.25%)</title><rect x="468.4" y="645" width="14.7" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="471.35" y="655.5" ></text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (12,088,554 samples, 1.43%)</title><rect x="437.6" y="517" width="17.0" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="440.64" y="527.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (9,177,604 samples, 1.09%)</title><rect x="488.0" y="581" width="12.9" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="491.03" y="591.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (68,753,137 samples, 8.15%)</title><rect x="249.4" y="853" width="96.1" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="252.36" y="863.5" >PyObject_Ca..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,231,900 samples, 1.57%)</title><rect x="84.1" y="869" width="18.5" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="87.12" y="879.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (11,085,125 samples, 1.31%)</title><rect x="140.6" y="629" width="15.5" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="143.63" y="639.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,085,125 samples, 1.31%)</title><rect x="140.6" y="373" width="15.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="143.63" y="383.5" ></text>
+</g>
+<g >
+<title>dl_main (26,509,205 samples, 3.14%)</title><rect x="28.4" y="837" width="37.1" height="15.0" fill="rgb(236,145,34)" rx="2" ry="2" />
+<text  x="31.40" y="847.5" >dl_..</text>
+</g>
+<g >
+<title>PyObject_CallNoArgs (13,475,339 samples, 1.60%)</title><rect x="175.4" y="341" width="18.8" height="15.0" fill="rgb(241,168,40)" rx="2" ry="2" />
+<text  x="178.38" y="351.5" ></text>
+</g>
+<g >
+<title>PyObject_Vectorcall (10,519,939 samples, 1.25%)</title><rect x="468.4" y="693" width="14.7" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="471.35" y="703.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (12,928,985 samples, 1.53%)</title><rect x="194.2" y="245" width="18.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="197.23" y="255.5" ></text>
+</g>
+<g >
+<title>PerfEventArray::sample_callback_wrapper (74,963,025 samples, 8.89%)</title><rect x="984.2" y="501" width="104.8" height="15.0" fill="rgb(234,133,31)" rx="2" ry="2" />
+<text  x="987.15" y="511.5" >PerfEventArr..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (11,085,125 samples, 1.31%)</title><rect x="140.6" y="533" width="15.5" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="143.63" y="543.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,231,900 samples, 1.57%)</title><rect x="84.1" y="693" width="18.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="87.12" y="703.5" ></text>
+</g>
+<g >
+<title>__irqentry_text_start (5,215,538 samples, 0.62%)</title><rect x="1182.7" y="869" width="7.3" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="1185.70" y="879.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,566,010 samples, 1.37%)</title><rect x="1057.0" y="341" width="16.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1060.04" y="351.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,786,205 samples, 1.63%)</title><rect x="734.1" y="597" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="737.13" y="607.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="437" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="447.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (65,857,798 samples, 7.81%)</title><rect x="345.5" y="757" width="92.1" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="348.53" y="767.5" >_PyEval_Eva..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,598,462 samples, 1.61%)</title><rect x="345.5" y="277" width="19.0" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="348.53" y="287.5" ></text>
+</g>
+<g >
+<title>_dl_relocate_object (415,310 samples, 0.05%)</title><rect x="1182.1" y="821" width="0.6" height="15.0" fill="rgb(231,120,28)" rx="2" ry="2" />
+<text  x="1185.12" y="831.5" ></text>
+</g>
+<g >
+<title>Py_RunMain (486,987,656 samples, 57.73%)</title><rect x="500.9" y="837" width="681.1" height="15.0" fill="rgb(242,172,41)" rx="2" ry="2" />
+<text  x="503.87" y="847.5" >Py_RunMain</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (12,928,985 samples, 1.53%)</title><rect x="194.2" y="293" width="18.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="197.23" y="303.5" ></text>
+</g>
+<g >
+<title>handle_mm_fault (13,462,351 samples, 1.60%)</title><rect x="46.7" y="757" width="18.8" height="15.0" fill="rgb(234,135,32)" rx="2" ry="2" />
+<text  x="49.65" y="767.5" ></text>
+</g>
+<g >
+<title>llvm::SelectionDAGISelLegacy::runOnMachineFunction (13,328,113 samples, 1.58%)</title><rect x="65.5" y="789" width="18.6" height="15.0" fill="rgb(223,85,20)" rx="2" ry="2" />
+<text  x="68.48" y="799.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,353,427 samples, 1.58%)</title><rect x="654.1" y="261" width="18.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="657.14" y="271.5" ></text>
+</g>
+<g >
+<title>llvm::FPPassManager::runOnModule (13,328,113 samples, 1.58%)</title><rect x="65.5" y="837" width="18.6" height="15.0" fill="rgb(249,204,48)" rx="2" ry="2" />
+<text  x="68.48" y="847.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,570,826 samples, 1.37%)</title><rect x="984.2" y="293" width="16.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="987.15" y="303.5" ></text>
+</g>
+<g >
+<title>pybind11::detail::accessor_policies::str_attr::get (11,570,826 samples, 1.37%)</title><rect x="984.2" y="421" width="16.1" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="987.15" y="431.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,101,248 samples, 1.55%)</title><rect x="249.4" y="309" width="18.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="252.36" y="319.5" ></text>
+</g>
+<g >
+<title>__mod_memcg_lruvec_state (13,156,656 samples, 1.56%)</title><rect x="10.0" y="613" width="18.4" height="15.0" fill="rgb(247,195,46)" rx="2" ry="2" />
+<text  x="13.00" y="623.5" ></text>
+</g>
+<g >
+<title>PyObject_VectorcallMethod (34,819,369 samples, 4.13%)</title><rect x="1008.3" y="229" width="48.7" height="15.0" fill="rgb(236,142,34)" rx="2" ry="2" />
+<text  x="1011.33" y="239.5" >PyOb..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,010,491 samples, 1.54%)</title><rect x="122.4" y="373" width="18.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="125.43" y="383.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (486,987,656 samples, 57.73%)</title><rect x="500.9" y="789" width="681.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="503.87" y="799.5" >[libpython3.13.so.1.0]</text>
+</g>
+<g >
+<title>pybind11::object pybind11::detail::object_api&lt;pybind11::handle&gt;::operator (63,392,199 samples, 7.51%)</title><rect x="1000.3" y="485" width="88.7" height="15.0" fill="rgb(244,182,43)" rx="2" ry="2" />
+<text  x="1003.34" y="495.5" >pybind11::..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,598,462 samples, 1.61%)</title><rect x="345.5" y="421" width="19.0" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="348.53" y="431.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,010,491 samples, 1.54%)</title><rect x="122.4" y="533" width="18.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="125.43" y="543.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,738,833 samples, 1.63%)</title><rect x="364.5" y="341" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="367.55" y="351.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,974,633 samples, 1.66%)</title><rect x="287.2" y="325" width="19.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="290.20" y="335.5" ></text>
+</g>
+<g >
+<title>llvm::SelectionDAGISel::DoInstructionSelection (13,328,113 samples, 1.58%)</title><rect x="65.5" y="725" width="18.6" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="68.48" y="735.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (10,519,939 samples, 1.25%)</title><rect x="468.4" y="453" width="14.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="471.35" y="463.5" ></text>
+</g>
+<g >
+<title>__pthread_once_slow (13,156,656 samples, 1.56%)</title><rect x="10.0" y="805" width="18.4" height="15.0" fill="rgb(206,7,1)" rx="2" ry="2" />
+<text  x="13.00" y="815.5" ></text>
+</g>
+<g >
+<title>exc_page_fault (13,892,765 samples, 1.65%)</title><rect x="306.7" y="213" width="19.5" height="15.0" fill="rgb(212,35,8)" rx="2" ry="2" />
+<text  x="309.75" y="223.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (11,085,125 samples, 1.31%)</title><rect x="140.6" y="405" width="15.5" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="143.63" y="415.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (11,085,125 samples, 1.31%)</title><rect x="140.6" y="581" width="15.5" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="143.63" y="591.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="293" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="303.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (12,088,554 samples, 1.43%)</title><rect x="437.6" y="565" width="17.0" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="440.64" y="575.5" ></text>
+</g>
+<g >
+<title>[_posixsubprocess.cpython-313-x86_64-linux-gnu.so] (13,786,205 samples, 1.63%)</title><rect x="734.1" y="549" width="19.3" height="15.0" fill="rgb(218,61,14)" rx="2" ry="2" />
+<text  x="737.13" y="559.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (14,154,169 samples, 1.68%)</title><rect x="102.6" y="341" width="19.8" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="105.63" y="351.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (12,746,550 samples, 1.51%)</title><rect x="383.8" y="277" width="17.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="386.76" y="287.5" ></text>
+</g>
+<g >
+<title>_PyLong_New (12,928,985 samples, 1.53%)</title><rect x="194.2" y="277" width="18.1" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="197.23" y="287.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (13,598,462 samples, 1.61%)</title><rect x="345.5" y="597" width="19.0" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="348.53" y="607.5" ></text>
+</g>
+<g >
+<title>pybind11::detail::type_caster&lt;int, void&gt;::load (6,084,023 samples, 0.72%)</title><rect x="810.9" y="597" width="8.5" height="15.0" fill="rgb(232,128,30)" rx="2" ry="2" />
+<text  x="813.86" y="607.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (11,085,125 samples, 1.31%)</title><rect x="140.6" y="549" width="15.5" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="143.63" y="559.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (81,062,412 samples, 9.61%)</title><rect x="559.4" y="709" width="113.4" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="562.43" y="719.5" >PyImport_Impor..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,101,248 samples, 1.55%)</title><rect x="249.4" y="629" width="18.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="252.36" y="639.5" ></text>
+</g>
+<g >
+<title>perf_buffer__poll (192,771,154 samples, 22.85%)</title><rect x="819.4" y="565" width="269.6" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="822.37" y="575.5" >perf_buffer__poll</text>
+</g>
+<g >
+<title>exc_page_fault (13,462,351 samples, 1.60%)</title><rect x="46.7" y="789" width="18.8" height="15.0" fill="rgb(212,35,8)" rx="2" ry="2" />
+<text  x="49.65" y="799.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,101,248 samples, 1.55%)</title><rect x="249.4" y="533" width="18.3" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="252.36" y="543.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (39,796,389 samples, 4.72%)</title><rect x="175.4" y="661" width="55.6" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="178.38" y="671.5" >PyImp..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="101" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="111.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,951,735 samples, 1.65%)</title><rect x="267.7" y="389" width="19.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="270.68" y="399.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (65,857,798 samples, 7.81%)</title><rect x="345.5" y="773" width="92.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="348.53" y="783.5" >[libpython3..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,951,735 samples, 1.65%)</title><rect x="267.7" y="277" width="19.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="270.68" y="287.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (14,154,169 samples, 1.68%)</title><rect x="102.6" y="357" width="19.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="105.63" y="367.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (13,353,427 samples, 1.58%)</title><rect x="654.1" y="309" width="18.7" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="657.14" y="319.5" ></text>
+</g>
+<g >
+<title>_PyObject_MakeTpCall (13,951,735 samples, 1.65%)</title><rect x="267.7" y="309" width="19.5" height="15.0" fill="rgb(229,113,27)" rx="2" ry="2" />
+<text  x="270.68" y="319.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (3,343,118 samples, 0.40%)</title><rect x="454.6" y="645" width="4.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="457.55" y="655.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,077,241 samples, 1.55%)</title><rect x="577.9" y="469" width="18.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="580.94" y="479.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (3,343,118 samples, 0.40%)</title><rect x="454.6" y="693" width="4.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="457.55" y="703.5" ></text>
+</g>
+<g >
+<title>handle_mm_fault (13,892,765 samples, 1.65%)</title><rect x="306.7" y="181" width="19.5" height="15.0" fill="rgb(234,135,32)" rx="2" ry="2" />
+<text  x="309.75" y="191.5" ></text>
+</g>
+<g >
+<title>PyEval_EvalCode (55,651,889 samples, 6.60%)</title><rect x="267.7" y="645" width="77.8" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="270.68" y="655.5" >PyEval_E..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (3,343,118 samples, 0.40%)</title><rect x="454.6" y="677" width="4.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="457.55" y="687.5" ></text>
+</g>
+<g >
+<title>amd_pmu_disable_all (14,704,884 samples, 1.74%)</title><rect x="881.6" y="389" width="20.6" height="15.0" fill="rgb(213,38,9)" rx="2" ry="2" />
+<text  x="884.63" y="399.5" ></text>
+</g>
+<g >
+<title>do_fault (13,156,656 samples, 1.56%)</title><rect x="10.0" y="693" width="18.4" height="15.0" fill="rgb(248,200,47)" rx="2" ry="2" />
+<text  x="13.00" y="703.5" ></text>
+</g>
+<g >
+<title>perf_event_read_simple (74,963,025 samples, 8.89%)</title><rect x="984.2" y="533" width="104.8" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="987.15" y="543.5" >perf_event_r..</text>
+</g>
+<g >
+<title>PyObject_GetAttr (13,649,007 samples, 1.62%)</title><rect x="753.4" y="645" width="19.1" height="15.0" fill="rgb(216,52,12)" rx="2" ry="2" />
+<text  x="756.41" y="655.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,598,462 samples, 1.61%)</title><rect x="345.5" y="357" width="19.0" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="348.53" y="367.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (11,085,125 samples, 1.31%)</title><rect x="140.6" y="741" width="15.5" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="143.63" y="751.5" ></text>
+</g>
+<g >
+<title>PyFile_OpenCodeObject (13,951,735 samples, 1.65%)</title><rect x="267.7" y="421" width="19.5" height="15.0" fill="rgb(206,5,1)" rx="2" ry="2" />
+<text  x="270.68" y="431.5" ></text>
+</g>
+<g >
+<title>handle_mm_fault (13,156,656 samples, 1.56%)</title><rect x="10.0" y="725" width="18.4" height="15.0" fill="rgb(234,135,32)" rx="2" ry="2" />
+<text  x="13.00" y="735.5" ></text>
+</g>
+<g >
+<title>std::allocator_traits&lt;std::allocator&lt;unsigned long&gt; &gt;::deallocate (6,668,434 samples, 0.79%)</title><rect x="1127.6" y="597" width="9.3" height="15.0" fill="rgb(228,110,26)" rx="2" ry="2" />
+<text  x="1130.57" y="607.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (65,857,798 samples, 7.81%)</title><rect x="345.5" y="789" width="92.1" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="348.53" y="799.5" >PyObject_Ca..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (39,796,389 samples, 4.72%)</title><rect x="175.4" y="421" width="55.6" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="178.38" y="431.5" >_PyEv..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (34,819,369 samples, 4.13%)</title><rect x="1008.3" y="309" width="48.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1011.33" y="319.5" >[lib..</text>
+</g>
+<g >
+<title>pybind11::detail::accessor&lt;pybind11::detail::accessor_policies::str_attr&gt;::ptr (11,570,826 samples, 1.37%)</title><rect x="984.2" y="453" width="16.1" height="15.0" fill="rgb(214,45,10)" rx="2" ry="2" />
+<text  x="987.15" y="463.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (63,392,199 samples, 7.51%)</title><rect x="1000.3" y="453" width="88.7" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="1003.34" y="463.5" >_PyEval_Ev..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,010,491 samples, 1.54%)</title><rect x="122.4" y="757" width="18.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="125.43" y="767.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (9,177,604 samples, 1.09%)</title><rect x="488.0" y="549" width="12.9" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="491.03" y="559.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModule (11,085,125 samples, 1.31%)</title><rect x="140.6" y="821" width="15.5" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="143.63" y="831.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (27,725,521 samples, 3.29%)</title><rect x="306.7" y="309" width="38.8" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="309.75" y="319.5" >_Py..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (24,095,616 samples, 2.86%)</title><rect x="122.4" y="869" width="33.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="125.43" y="879.5" >[l..</text>
+</g>
+<g >
+<title>std::_Bvector_base&lt;std::allocator&lt;bool&gt; &gt;::~_Bvector_base (6,668,434 samples, 0.79%)</title><rect x="1127.6" y="629" width="9.3" height="15.0" fill="rgb(237,150,36)" rx="2" ry="2" />
+<text  x="1130.57" y="639.5" ></text>
+</g>
+<g >
+<title>_PyObject_MakeTpCall (13,598,462 samples, 1.61%)</title><rect x="345.5" y="293" width="19.0" height="15.0" fill="rgb(229,113,27)" rx="2" ry="2" />
+<text  x="348.53" y="303.5" ></text>
+</g>
+<g >
+<title>do_sys_openat2 (13,598,462 samples, 1.61%)</title><rect x="345.5" y="181" width="19.0" height="15.0" fill="rgb(253,221,52)" rx="2" ry="2" />
+<text  x="348.53" y="191.5" ></text>
+</g>
+<g >
+<title>_Py_HandlePending (27,774,461 samples, 3.29%)</title><rect x="615.3" y="293" width="38.8" height="15.0" fill="rgb(209,19,4)" rx="2" ry="2" />
+<text  x="618.29" y="303.5" >_Py..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,231,900 samples, 1.57%)</title><rect x="84.1" y="789" width="18.5" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="87.12" y="799.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,010,491 samples, 1.54%)</title><rect x="122.4" y="325" width="18.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="125.43" y="335.5" ></text>
+</g>
+<g >
+<title>[llc-22] (13,328,113 samples, 1.58%)</title><rect x="65.5" y="869" width="18.6" height="15.0" fill="rgb(253,222,53)" rx="2" ry="2" />
+<text  x="68.48" y="879.5" ></text>
+</g>
+<g >
+<title>PyObject_CallNoArgs (27,774,461 samples, 3.29%)</title><rect x="615.3" y="341" width="38.8" height="15.0" fill="rgb(241,168,40)" rx="2" ry="2" />
+<text  x="618.29" y="351.5" >PyO..</text>
+</g>
+<g >
+<title>_raw_write_lock_irq (11,415,203 samples, 1.35%)</title><rect x="845.1" y="469" width="15.9" height="15.0" fill="rgb(251,214,51)" rx="2" ry="2" />
+<text  x="848.07" y="479.5" ></text>
+</g>
+<g >
+<title>llvm::SelectionDAGISel::runOnMachineFunction (13,328,113 samples, 1.58%)</title><rect x="65.5" y="773" width="18.6" height="15.0" fill="rgb(230,115,27)" rx="2" ry="2" />
+<text  x="68.48" y="783.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (259,270,164 samples, 30.73%)</title><rect x="791.9" y="693" width="362.7" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="794.92" y="703.5" >[libpython3.13.so.1.0]</text>
+</g>
+<g >
+<title>StructParser::parse (11,570,826 samples, 1.37%)</title><rect x="984.2" y="485" width="16.1" height="15.0" fill="rgb(254,225,54)" rx="2" ry="2" />
+<text  x="987.15" y="495.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,543,810 samples, 1.61%)</title><rect x="791.9" y="629" width="19.0" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="794.92" y="639.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (11,566,010 samples, 1.37%)</title><rect x="1057.0" y="389" width="16.2" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1060.04" y="399.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (67,831,629 samples, 8.04%)</title><rect x="577.9" y="565" width="94.9" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="580.94" y="575.5" >PyObject_Ca..</text>
+</g>
+<g >
+<title>_dl_relocate_object (26,509,205 samples, 3.14%)</title><rect x="28.4" y="821" width="37.1" height="15.0" fill="rgb(231,120,28)" rx="2" ry="2" />
+<text  x="31.40" y="831.5" >_dl..</text>
+</g>
+<g >
+<title>pybind11::cpp_function::cpp_function&lt;int, PerfEventArray, int, pybind11::name, pybind11::is_method, pybind11::sibling, pybind11::arg&gt; (211,361,540 samples, 25.05%)</title><rect x="819.4" y="597" width="295.6" height="15.0" fill="rgb(245,187,44)" rx="2" ry="2" />
+<text  x="822.37" y="607.5" >pybind11::cpp_function::cpp_function&lt;in..</text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (13,974,633 samples, 1.66%)</title><rect x="287.2" y="309" width="19.5" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="290.20" y="319.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (3,343,118 samples, 0.40%)</title><rect x="454.6" y="661" width="4.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="457.55" y="671.5" ></text>
+</g>
+<g >
+<title>PyObject_SetAttr (13,951,735 samples, 1.65%)</title><rect x="267.7" y="261" width="19.5" height="15.0" fill="rgb(238,156,37)" rx="2" ry="2" />
+<text  x="270.68" y="271.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (12,088,554 samples, 1.43%)</title><rect x="437.6" y="581" width="17.0" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="440.64" y="591.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,598,462 samples, 1.61%)</title><rect x="345.5" y="373" width="19.0" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="348.53" y="383.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,762,235 samples, 1.63%)</title><rect x="156.1" y="117" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="159.13" y="127.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (52,259,336 samples, 6.19%)</title><rect x="364.5" y="469" width="73.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="367.55" y="479.5" >[libpyth..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (14,154,169 samples, 1.68%)</title><rect x="102.6" y="325" width="19.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="105.63" y="335.5" ></text>
+</g>
+<g >
+<title>PyImport_ImportModuleLevelObject (14,154,169 samples, 1.68%)</title><rect x="102.6" y="773" width="19.8" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="105.63" y="783.5" ></text>
+</g>
+<g >
+<title>pybind11::cpp_function::initialize&lt;pybind11::cpp_function::initialize&lt;pybind11::list, BpfMap, , pybind11::name, pybind11::is_method, pybind11::sibling&gt; (11,290,026 samples, 1.34%)</title><rect x="1073.2" y="389" width="15.8" height="15.0" fill="rgb(234,137,32)" rx="2" ry="2" />
+<text  x="1076.21" y="399.5" ></text>
+</g>
+<g >
+<title>pybind11::thread_specific_storage&lt;pybind11::detail::loader_life_support&gt;::get (6,939,269 samples, 0.82%)</title><rect x="1136.9" y="645" width="9.7" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="1139.90" y="655.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (13,231,900 samples, 1.57%)</title><rect x="84.1" y="837" width="18.5" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="87.12" y="847.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (39,796,389 samples, 4.72%)</title><rect x="175.4" y="725" width="55.6" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="178.38" y="735.5" >[libp..</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (14,154,169 samples, 1.68%)</title><rect x="102.6" y="693" width="19.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="105.63" y="703.5" ></text>
+</g>
+<g >
+<title>do_user_addr_fault (13,462,351 samples, 1.60%)</title><rect x="46.7" y="773" width="18.8" height="15.0" fill="rgb(228,108,25)" rx="2" ry="2" />
+<text  x="49.65" y="783.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (12,088,554 samples, 1.43%)</title><rect x="437.6" y="661" width="17.0" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="440.64" y="671.5" ></text>
+</g>
+<g >
+<title>asm_exc_page_fault (13,090,535 samples, 1.55%)</title><rect x="231.0" y="869" width="18.4" height="15.0" fill="rgb(225,93,22)" rx="2" ry="2" />
+<text  x="234.05" y="879.5" ></text>
+</g>
+<g >
+<title>pybind11::detail::type_caster_base&lt;BpfMap&gt;::type_caster_base (11,290,026 samples, 1.34%)</title><rect x="1073.2" y="261" width="15.8" height="15.0" fill="rgb(241,167,40)" rx="2" ry="2" />
+<text  x="1076.21" y="271.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,598,462 samples, 1.61%)</title><rect x="345.5" y="437" width="19.0" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="348.53" y="447.5" ></text>
+</g>
+<g >
+<title>PyObject_CallMethodObjArgs (13,101,248 samples, 1.55%)</title><rect x="249.4" y="645" width="18.3" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="252.36" y="655.5" ></text>
+</g>
+<g >
+<title>PyType_GenericAlloc (2,086,216 samples, 0.25%)</title><rect x="485.1" y="693" width="2.9" height="15.0" fill="rgb(251,211,50)" rx="2" ry="2" />
+<text  x="488.11" y="703.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (12,088,554 samples, 1.43%)</title><rect x="437.6" y="613" width="17.0" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="440.64" y="623.5" ></text>
+</g>
+<g >
+<title>_PyEval_EvalFrameDefault (134,610,935 samples, 15.96%)</title><rect x="249.4" y="885" width="188.2" height="15.0" fill="rgb(221,75,17)" rx="2" ry="2" />
+<text  x="252.36" y="895.5" >_PyEval_EvalFrameDefault</text>
+</g>
+<g >
+<title>PyObject_CallMethod (6,520,899 samples, 0.77%)</title><rect x="459.2" y="741" width="9.2" height="15.0" fill="rgb(243,175,41)" rx="2" ry="2" />
+<text  x="462.23" y="751.5" ></text>
+</g>
+<g >
+<title>llvm::legacy::PassManagerImpl::run (13,328,113 samples, 1.58%)</title><rect x="65.5" y="853" width="18.6" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="68.48" y="863.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (13,832,756 samples, 1.64%)</title><rect x="326.2" y="293" width="19.3" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="329.18" y="303.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (486,987,656 samples, 57.73%)</title><rect x="500.9" y="821" width="681.1" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="503.87" y="831.5" >[libpython3.13.so.1.0]</text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (9,177,604 samples, 1.09%)</title><rect x="488.0" y="613" width="12.9" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="491.03" y="623.5" ></text>
+</g>
+<g >
+<title>do_fault (13,462,351 samples, 1.60%)</title><rect x="46.7" y="725" width="18.8" height="15.0" fill="rgb(248,200,47)" rx="2" ry="2" />
+<text  x="49.65" y="735.5" ></text>
+</g>
+<g >
+<title>_PyType_LookupRef (4,743,953 samples, 0.56%)</title><rect x="779.4" y="693" width="6.6" height="15.0" fill="rgb(250,210,50)" rx="2" ry="2" />
+<text  x="782.38" y="703.5" ></text>
+</g>
+<g >
+<title>[libpython3.13.so.1.0] (27,774,461 samples, 3.29%)</title><rect x="615.3" y="325" width="38.8" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="618.29" y="335.5" >[li..</text>
+</g>
+</g>
+</svg>
