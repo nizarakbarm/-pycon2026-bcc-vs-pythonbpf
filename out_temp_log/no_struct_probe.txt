@@ -1,0 +1,10 @@
+perf probe -x /usr/lib64/libpython3.13.so.1.0 -a PyBytes_FromStringAndSize
+event: probe_libpython3:PyBytes_FromStringAndSize
+
+Program: perf_timed_empty_no_struct.py (no struct parsing)
+Trigger: /tmp/gen_fast 100000 (uid=1002, unlink)
+Count:   100,003 hits  (100,000 = 1 per delivered event + 3 startup)
+
+Conclusion: py::bytes alloc (COPY #1) is UNCONDITIONAL — fires even
+without struct_name. Proves the 805 ns/ev struct delta is on top of a
+base per-event allocation present in both variants.
