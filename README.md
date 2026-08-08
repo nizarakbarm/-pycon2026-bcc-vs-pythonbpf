@@ -20,6 +20,56 @@ All scripts run on the benchmark VM (`vmdevnull`):
 
 Kernel 6.12.0 · openSUSE Leap 16.0 · single CPU.
 
+
+## 0. Installing the stack (fresh VM)
+
+The benchmark VM is **openSUSE Leap 16.0, kernel 6.12.0**. Steps below reproduce the environment that produced all artifacts in this repo. BCC installs from distro RPMs; Python-BPF needs a source rebuild of `pylibbpf` so the `.so` carries DWARF debug info (required for the perf-flamegraph attribution in the talk: "pylibbpf .so = 5.74% of samples").
+
+### BCC
+
+```bash
+zypper install -y bcc python3-bcc bcc-tools bcc-examples bcc-lua bpftool libbpf-devel
+/usr/bin/python3 -c "import bcc; print(bcc.__version__)"   # 0.35.0
+```
+
+`bcc` (0.35.0) runs on the **system** interpreter `/usr/bin/python3`. `libbpf-devel` brings `libbpf.so.1` (needed by pylibbpf later); `bpftool` is used for the `xlated`/`jited` dumps.
+
+### Python-BPF
+
+Separate **venv** — PBPF's compile pipeline needs llvmlite + clang/llc, and a venv keeps `bcc` importable by the system python.
+
+```bash
+zypper install -y bpftool clang llvm            # llc compiles IR → BPF obj
+python3 -m venv /root/learn-pythonbpf/.venv
+/root/learn-pythonbpf/.venv/bin/pip install pythonbpf pylibbpf
+```
+
+Yields: `pythonbpf` (0.1.9), `pylibbpf` (0.0.7), `llvmlite` (0.47.0).
+
+Generate `vmlinux.py` for the target kernel (Python-BPF parser input):
+
+```bash
+git clone https://github.com/pythonbpf/Python-BPF.git
+cd Python-BPF
+sudo tools/vmlinux-gen.py            # emits vmlinux.py (reads /sys/kernel/btf/vmlinux)
+```
+
+### Rebuild pylibbpf WITH debug symbols (talk-critical)
+
+The PyPI wheel ships a **Release** build — `perf`/`gdb` can't attribute cost to specific functions inside the `pylibbpf .so` (they show as `[unknown]`). The DSO-profile numbers in the talk (pylibbpf = 5.74% of samples) require a **Debug** build:
+
+```bash
+git clone https://github.com/pythonbpf/pylibbpf
+cd pylibbpf
+DEBUG=1 /root/learn-pythonbpf/.venv/bin/pip install .   # setup.py: DEBUG=1 → CMAKE_BUILD_TYPE=Debug
+```
+
+- `DEBUG=1` is read in `pylibbpf/setup.py`; it maps to CMake `-DCMAKE_BUILD_TYPE=Debug`, emitting DWARF — verify: `readelf -S` on the rebuilt `.so` shows `debug_*` sections.
+- pythonbpf + pylibbpf must live in the **same venv**; loading needs `libbpf.so.1` on the system (installed by `libbpf-devel` above).
+- BCC needs **no source build** — its startup cost (clang subprocess, `/proc/kallsyms`) comes with the RPM layout.
+
+Reference notes (vault): `PythonBPF Setup.md` (platform matrix) and `BCC.md` (build alternatives).
+
 ---
 
 ## 1. Main scripts
